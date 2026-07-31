@@ -19,7 +19,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 command -v pi >/dev/null 2>&1 || fail "pi not found"
 command -v node >/dev/null 2>&1 || fail "node not found"
 
-TMP_ROOT=$(fm_test_tmproot fm-pi-quota-menu-live-e2e)
+TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-pi-quota-menu-live-e2e.XXXXXX")
+trap 'rm -rf "$TMP_ROOT"' EXIT
 PROJECT="$TMP_ROOT/project"
 AGENT_DIR="$TMP_ROOT/agent"
 mkdir -p "$PROJECT/.pi/extensions/lib" "$AGENT_DIR"

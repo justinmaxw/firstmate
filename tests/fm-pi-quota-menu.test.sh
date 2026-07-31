@@ -5,7 +5,8 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-TMP_ROOT=$(fm_test_tmproot fm-pi-quota-menu)
+TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-pi-quota-menu.XXXXXX")
+trap 'rm -rf "$TMP_ROOT"' EXIT
 EXT="$ROOT/.pi/extensions/fm-quota.ts"
 FORMATTER="$ROOT/.pi/extensions/lib/fm-quota-menu.ts"
 
