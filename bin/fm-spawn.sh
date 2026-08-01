@@ -1297,15 +1297,7 @@ kimi_spawn_fail() {  # <detail>
 }
 
 if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
-  # Absolute path: some backends (observed on herdr) spawn a pane shell whose
-  # PATH omits the directory treehouse is installed in, even though firstmate's
-  # own process resolves it fine. A bare 'treehouse get' then fails with
-  # "command not found" in that pane while looking identical to a healthy spawn
-  # anywhere firstmate itself checks. Resolve once here so the typed command
-  # does not depend on the target pane's PATH.
-  treehouse_bin=$(command -v treehouse 2>/dev/null || true)
-  [ -n "$treehouse_bin" ] || treehouse_bin=treehouse
-  spawn_send_text_line "$WT_TARGET" "$treehouse_bin get"
+  spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
   # Target the stable window id, not the name: if the name is ever lost (e.g. an
