@@ -199,6 +199,7 @@ fm-afk-inject-e2e.test.sh
 fm-backend-herdr-smoke.test.sh
 fm-backend-cmux-smoke.test.sh
 fm-pi-primary-live-e2e.test.sh
+fm-pi-quota-menu-live-e2e.test.sh
 fm-quota-array-dispatch-live-e2e.test.sh
 EOF
 }

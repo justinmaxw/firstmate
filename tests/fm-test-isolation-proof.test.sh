@@ -74,6 +74,8 @@ test_list_exclusions_documents_reasons() {
     || fail "exclusions must document watcher-lock serial reason"
   printf '%s\n' "$out" | grep -Fq 'fm-backend-herdr-smoke.test.sh' \
     || fail "exclusions must document real-herdr serial reason"
+  printf '%s\n' "$out" | grep -Fq 'fm-pi-quota-menu-live-e2e.test.sh' \
+    || fail "exclusions must document the live Pi quota-menu reason"
   pass "exclusion list documents serial reasons"
 }
 
