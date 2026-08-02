@@ -1297,7 +1297,15 @@ kimi_spawn_fail() {  # <detail>
 }
 
 if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
-  spawn_send_text_line "$WT_TARGET" 'treehouse get'
+  # Absolute path: some backends (observed on herdr) spawn a pane shell whose
+  # PATH omits the directory treehouse is installed in, even though firstmate's
+  # own process resolves it fine. A bare 'treehouse get' then fails with
+  # "command not found" in that pane while looking identical to a healthy spawn
+  # anywhere firstmate itself checks. Resolve once here so the typed command
+  # does not depend on the target pane's PATH.
+  treehouse_bin=$(command -v treehouse 2>/dev/null || true)
+  [ -n "$treehouse_bin" ] || treehouse_bin=treehouse
+  spawn_send_text_line "$WT_TARGET" "$(shell_quote "$treehouse_bin") get"
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
   # Target the stable window id, not the name: if the name is ever lost (e.g. an
@@ -1685,6 +1693,16 @@ fi
 # process (go build, go test, ...) inherit it. Sent before the launch command so
 # the env is set when the agent starts; the brief sleep lets the export land.
 spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
+sleep 0.3
+# Prepend firstmate's own PATH to the crewmate's pane shell PATH. Some backends
+# (observed on herdr) spawn a pane shell whose PATH omits directories where tools
+# are installed (e.g. /opt/homebrew/bin, nvm Node bins) even though firstmate's
+# own process has access to them through its shell config or settings.local.json.
+# Prepending PATH early ensures the pane can find all tools firstmate itself can
+# find without dropping backend-specific directories already present in the pane.
+# This covers every command the crewmate runs autonomously, not just one injected
+# command.
+spawn_send_text_line "$T" "export PATH=$(shell_quote "$PATH"):\"\$PATH\""
 sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
 sleep 0.3
