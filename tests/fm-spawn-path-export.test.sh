@@ -107,7 +107,8 @@ sleep 1
 
 # Verify PATH export: inject a command that uses the exported PATH to find test-tool
 TEST_CHECK_CMD='echo "Checking PATH export:" && which test-tool && test-tool'
-"$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" pane send "$PANE" --text "$TEST_CHECK_CMD" --key Enter || true
+"$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" pane send-text "$PANE" "$TEST_CHECK_CMD" || true
+"$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" pane send-keys "$PANE" enter || true
 
 sleep 1
 

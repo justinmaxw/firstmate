@@ -1305,7 +1305,7 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # does not depend on the target pane's PATH.
   treehouse_bin=$(command -v treehouse 2>/dev/null || true)
   [ -n "$treehouse_bin" ] || treehouse_bin=treehouse
-  spawn_send_text_line "$WT_TARGET" "$treehouse_bin get"
+  spawn_send_text_line "$WT_TARGET" "$(shell_quote "$treehouse_bin") get"
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
   # Target the stable window id, not the name: if the name is ever lost (e.g. an
@@ -1694,14 +1694,15 @@ fi
 # the env is set when the agent starts; the brief sleep lets the export land.
 spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
 sleep 0.3
-# Export firstmate's own PATH into the crewmate's pane shell. Some backends
+# Prepend firstmate's own PATH to the crewmate's pane shell PATH. Some backends
 # (observed on herdr) spawn a pane shell whose PATH omits directories where tools
 # are installed (e.g. /opt/homebrew/bin, nvm Node bins) even though firstmate's
 # own process has access to them through its shell config or settings.local.json.
-# Exporting PATH early ensures the pane can find all tools firstmate itself can
-# find, without hardcoding this machine's exact installation paths. This covers
-# every command the crewmate runs autonomously, not just one injected command.
-spawn_send_text_line "$T" "export PATH=$(shell_quote "$PATH")"
+# Prepending PATH early ensures the pane can find all tools firstmate itself can
+# find without dropping backend-specific directories already present in the pane.
+# This covers every command the crewmate runs autonomously, not just one injected
+# command.
+spawn_send_text_line "$T" "export PATH=$(shell_quote "$PATH"):\"\$PATH\""
 sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
 sleep 0.3
