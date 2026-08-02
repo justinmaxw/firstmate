@@ -1694,6 +1694,15 @@ fi
 # the env is set when the agent starts; the brief sleep lets the export land.
 spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
 sleep 0.3
+# Export firstmate's own PATH into the crewmate's pane shell. Some backends
+# (observed on herdr) spawn a pane shell whose PATH omits directories where tools
+# are installed (e.g. /opt/homebrew/bin, nvm Node bins) even though firstmate's
+# own process has access to them through its shell config or settings.local.json.
+# Exporting PATH early ensures the pane can find all tools firstmate itself can
+# find, without hardcoding this machine's exact installation paths. This covers
+# every command the crewmate runs autonomously, not just one injected command.
+spawn_send_text_line "$T" "export PATH=$(shell_quote "$PATH")"
+sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
 sleep 0.3
 if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
