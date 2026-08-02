@@ -290,7 +290,21 @@ export default function (pi: ExtensionAPI) {
     removeTerminalInputHandler = ctx.ui.onTerminalInput((data) => {
       if (!getKeybindings().matches(data, "tui.input.submit")) return;
 
-      const input = ctx.ui.getEditorText().trim();
+      // This handler is re-registered with a fresh ctx on every session_start, but Pi
+      // invalidates the previous ctx (session replacement, reload, or shutdown) before
+      // the next session_start finishes rebinding it, and this callback stays registered
+      // through that gap. Reading a stale ctx here would throw and, because Pi dispatches
+      // raw terminal input handlers synchronously ahead of its own submit handling, an
+      // uncaught throw would abort that dispatch and silently drop the keystroke that
+      // was supposed to submit the message. Treat a stale ctx as a no-op instead: losing
+      // the /share or /export presentation toggle in that narrow window is a much smaller
+      // cost than dropping an ordinary message.
+      let input: string;
+      try {
+        input = ctx.ui.getEditorText().trim();
+      } catch {
+        return;
+      }
       if (
         input !== "/share" &&
         input !== "/export" &&
@@ -306,9 +320,14 @@ export default function (pi: ExtensionAPI) {
         exportRendering = false;
         setCalmStockExportRendering(false);
         publishPresentationState();
-        const expanded = ctx.ui.getToolsExpanded();
-        ctx.ui.setToolsExpanded(!expanded);
-        ctx.ui.setToolsExpanded(expanded);
+        try {
+          const expanded = ctx.ui.getToolsExpanded();
+          ctx.ui.setToolsExpanded(!expanded);
+          ctx.ui.setToolsExpanded(expanded);
+        } catch {
+          // Same stale-ctx race as above; the export already rendered, so a lost
+          // tools-expanded restore is a cosmetic no-op, not a dropped message.
+        }
       }, 0);
     });
   });
@@ -327,6 +346,12 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", (_event, ctx) => {
     agentRunActive = false;
     applyWorkingPresentation(ctx.ui);
+    // Shrink the stale-ctx race to nothing: drop the terminal-input handler as soon as
+    // this session is torn down instead of waiting for the next session_start to
+    // unsubscribe it, so no keystroke can reach a captured ctx between shutdown and the
+    // replacement session's own session_start.
+    removeTerminalInputHandler?.();
+    removeTerminalInputHandler = undefined;
   });
 
   pi.registerCommand("calm", {
