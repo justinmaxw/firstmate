@@ -127,12 +127,23 @@ fi
 
 mutation=
 mutation_target=${3:-}
+abort_pane_probe=0
 case "${1:-} ${2:-}" in
   "workspace create") mutation=workspace-create; mutation_target=$label ;;
   "tab create") mutation=tab-create; mutation_target=$label ;;
   "pane close") mutation=pane-close ;;
   "tab focus") mutation=tab-focus ;;
 esac
+if [ "${1:-} ${2:-}" = "pane get" ] && [ -d "$POST_CREATE_ABORT_CONTROL" ]; then
+  for task_dir in "$POST_CREATE_ABORT_CONTROL"/abort-*; do
+    [ -d "$task_dir" ] || continue
+    if [ "${3:-}" = "$(cat "$task_dir/task-pane" 2>/dev/null || true)" ]; then
+      abort_pane_probe=1
+      mutation=pane-probe
+      break
+    fi
+  done
+fi
 refusal_probe=0
 if [ "${1:-} ${2:-}" = "pane get" ] && [ -d "$ACTIVE_SEEDED_CONTROL" ] \
    && [ "$(cat "$ACTIVE_SEEDED_CONTROL/stage" 2>/dev/null || true)" = injected ] \
@@ -182,6 +193,12 @@ if [ "$status" -eq 0 ] && [ "${1:-} ${2:-}" = "pane get" ] && [ -d "$POST_CREATE
     out=$(printf '%s' "$out" | jq --arg cwd "$POST_CREATE_ABORT_CONTROL/not-a-worktree" '.result.pane.foreground_cwd = $cwd')
     break
   done
+fi
+if [ "$status" -ne 0 ] && [ "$abort_pane_probe" -eq 1 ]; then
+  mutation=pane-close
+  mutation_target=${3:-}
+elif [ "$abort_pane_probe" -eq 1 ]; then
+  mutation=
 fi
 if [ -n "$mutation" ]; then
   after=$(focus_snapshot || printf ambiguous/ambiguous)
