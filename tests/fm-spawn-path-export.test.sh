@@ -66,6 +66,8 @@ mkdir -p "$STATE" "$DATA/$ID" "$CONFIG"
 cat > "$DATA/$ID/brief.md" <<'BRIEF'
 # Test PATH Export Brief
 
+Delivery contract: mode=no-mistakes
+
 Run a simple test to verify the exported PATH includes directories from firstmate's environment.
 Command: test-tool
 
@@ -87,7 +89,7 @@ env -u TMUX -u FM_BACKEND PATH="$TEST_PATH" HERDR_ENV=1 \
   FM_CONFIG_OVERRIDE="$CONFIG" FM_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" \
   FM_SPAWN_NO_GUARD=1 \
   "$ROOT/bin/fm-spawn.sh" "$ID" "$PROJ" "sh -c 'echo path-export-ok'" \
-  >"$OUT_FILE" 2>"$ERR_FILE"
+  --mode no-mistakes --yolo off >"$OUT_FILE" 2>"$ERR_FILE"
 status=$?
 [ "$status" -eq 0 ] || fail "fm-spawn.sh failed"$'\n'"--- stderr ---"$'\n'"$(cat "$ERR_FILE")"
 
