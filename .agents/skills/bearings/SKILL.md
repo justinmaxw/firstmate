@@ -33,6 +33,8 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    Run `bin/fm-bearings-snapshot.sh` at invocation time and read its compact output.
    It is the single bounded, deterministic fleet-state source for Bearings and renders TOON by default.
    Do not create or consult a second fleet-state reader, parser contract, status-event-tail interpretation, visible-session recap, ad-hoc project probe, or ad-hoc `gh-axi`/`gh` query.
+   The one exception is night-run accounting, which is not fleet state and has its own owner: in file mode only, and only when a night was armed, also run `bin/fm-night-check.sh ledger` per participating home for the night ledger described in step 3.
+   That command is read-only and mutates nothing, but it does take a live `quota-axi` reading, so it is the one path in this skill that is not purely local.
    The command's header and `--help` output own its exact fields, bounds, opt-ins, and output contract.
    Keep the default local-only read unless the captain asks to include PRs.
    For registered secondmates, use the snapshot's structured-home classification and provenance.
@@ -61,7 +63,12 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    - **Recently Landed** - the bounded current recent-completions baseline from structured state across the main fleet and every registered secondmate home, rendered in full on every run.
    - **Underway** - each live direct report making progress, with its current state, and the plans or main pickup pointers worth reopening (`data/<id>/report.md` files, `.lavish/*.html` boards).
    - **Charted Next** - queued or gated work, including any main-inventory integrity warning, with each item's blocker, date, or integrity reason.
+   - **Night ledger** - included only when a night was armed, one block per participating home, taken verbatim from that home's `bin/fm-night-check.sh ledger`.
+     It reports what was dispatched, landed, parked with the reason, and failed overnight, plus the bedtime-versus-wake quota delta, and it is the only measured per-night cost this fleet has.
+     Its parked entries are already surfaced as decisions in Captain's Call, so the ledger is the accounting record rather than a second action list.
+     Omit the whole block when no home has a night record; never fabricate one from chat memory or a status tail.
    After writing the file, return the concise four-section chat digest and include the report path or link without adding a fifth section.
+   The night ledger is a file-mode-only block; the chat digest keeps exactly its four sections.
    For a richer review surface, optionally offer a Lavish board with `lavish-axi` when the report has enough structure to deserve one, but only after the required digest is ready.
 
 ## Chat-response contract
