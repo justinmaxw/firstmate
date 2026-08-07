@@ -21,6 +21,14 @@
 #   (h) an unarmed home is silent and refuses accounting
 #   (i) the ledger reports dispatched, landed, parked with the reason, and
 #       failed work plus the bedtime-versus-wake quota delta
+#   (k) a parked or failed worker whose window is deliberately left running
+#       until morning does not occupy a concurrency slot
+#   (l) a dispatch attempt that moved neither the ready set nor the running
+#       count still re-opens the edge, so ONE refused spawn cannot end a night
+#   (m) the ledger reports only the current night, never a previous one armed
+#       in the same home
+#   (n) the real quota-axi JSON shape the digest reads is pinned, so a producer
+#       change fails loudly instead of silently degrading to "unavailable"
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -92,6 +100,13 @@ running_task() {  # <home> <id>
   local home=$1 id=$2
   printf 'window=firstmate:fm-%s\nkind=ship\nbackend=tmux\nendpoint_task_id=%s\n' "$id" "$id" \
     > "$home/state/$id.meta"
+}
+
+# A worker that has stopped working but whose window is deliberately still up,
+# which is what the night procedure leaves behind for a parked or failed item.
+report_status() {  # <home> <id> <status-line>
+  local home=$1 id=$2 line=$3
+  printf 'working: started\n%s\n' "$line" > "$home/state/$id.status"
 }
 
 # --- (a) edge-triggering: an unchanged signature is silent on repeat ---------
@@ -372,5 +387,125 @@ assert_contains "$(night "$HOME_F" ledger)" "Quota at wake: unavailable" \
 assert_contains "$(night "$HOME_F" ledger)" "Quota delta: not comparable" \
   "an unreadable quota yields no fabricated delta"
 pass "an unmeasurable quota reading is reported honestly"
+
+# --- (k) a stopped worker's live window does not hold a concurrency slot ------
+#
+# The night deliberately leaves a parked or failed worker running until morning,
+# and section 7 forbids tearing a ship task down before landing is confirmed. If
+# those endpoints kept counting against the cap, every parked item would shrink
+# concurrency until the check went silent for the rest of the night with the
+# queue still full - the exact 02:00 failure the whole feature exists to remove.
+
+HOME_SLOTS=$(make_home slots)
+queue "$HOME_SLOTS" alpha beta gamma
+night "$HOME_SLOTS" arm --budget 5 --cap 2 >/dev/null || fail "arm failed"
+running_task "$HOME_SLOTS" one
+running_task "$HOME_SLOTS" two
+[ -z "$(night "$HOME_SLOTS" poll)" ] || fail "poll fired with two working crewmates at a cap of 2"
+
+# one is parked on a decision firstmate has no authority to answer. Its window
+# and its state/<id>.meta both stay exactly where they were.
+report_status "$HOME_SLOTS" one "needs-decision: which retry policy should the wrapper use"
+assert_present "$HOME_SLOTS/state/one.meta" "parking removed the worker's metadata"
+assert_contains "$(night "$HOME_SLOTS" poll)" "night: 3 ready, 1 running" \
+  "a parked worker still holding a live window kept occupying a concurrency slot"
+
+# A failed worker's branch is likewise left for the morning.
+report_status "$HOME_SLOTS" two "failed: the build never came back"
+assert_present "$HOME_SLOTS/state/two.meta" "a failed worker's metadata was torn down"
+assert_contains "$(night "$HOME_SLOTS" poll)" "night: 3 ready, 0 running" \
+  "a failed worker still holding a live window kept occupying a concurrency slot"
+
+# A worker that is still working is still counted, so the cap keeps meaning what
+# it says.
+report_status "$HOME_SLOTS" one "working: back on it after the answer"
+assert_contains "$(night "$HOME_SLOTS" poll)" "night: 3 ready, 1 running" \
+  "a working crewmate stopped occupying a concurrency slot"
+pass "parked and failed workers free their concurrency slot while working ones keep theirs"
+
+# --- (l) a recorded dispatch attempt re-opens the edge ------------------------
+#
+# A spawn that refused moves neither the ready set nor the running count, so
+# without the night's own accounting in the signature the check would go silent
+# forever after ONE failure instead of the documented two in a row.
+
+HOME_REFUSED=$(make_home refused)
+queue "$HOME_REFUSED" alpha beta
+night "$HOME_REFUSED" arm --budget 4 --cap 3 >/dev/null || fail "arm failed"
+assert_contains "$(night "$HOME_REFUSED" poll)" "night: 2 ready, 0 running, 4 dispatches left" \
+  "the first poll did not announce the queue"
+[ -z "$(night "$HOME_REFUSED" poll)" ] || fail "poll re-fired on an unchanged signature"
+
+# The spawn refused: nothing was started, no window exists, and the item is
+# still exactly where the selector left it.
+night "$HOME_REFUSED" record dispatched alpha >/dev/null || fail "record dispatched failed"
+night "$HOME_REFUSED" record failed alpha --reason "spawn refused" >/dev/null || fail "record failed failed"
+assert_contains "$( (cd "$HOME_REFUSED" && tasks-axi ready) )" "alpha," \
+  "the refused item did not stay in the ready queue"
+assert_contains "$(night "$HOME_REFUSED" status)" "consecutive_failures=1" "one failure is recorded"
+
+assert_contains "$(night "$HOME_REFUSED" poll)" "night: 2 ready, 0 running, 3 dispatches left" \
+  "the check went silent after ONE refused dispatch instead of the documented two"
+[ -z "$(night "$HOME_REFUSED" poll)" ] || fail "poll re-fired on an unchanged signature after the retry"
+pass "a refused dispatch re-opens the edge instead of ending the night after one failure"
+
+# The two-in-a-row stop is still the hard limit on that retry path.
+night "$HOME_REFUSED" record dispatched alpha >/dev/null
+night "$HOME_REFUSED" record failed alpha --reason "spawn refused again" >/dev/null
+assert_contains "$(night "$HOME_REFUSED" status)" "stopped=2 dispatches failed in a row" \
+  "the second refusal in a row did not stop the night"
+[ -z "$(night "$HOME_REFUSED" poll)" ] || fail "poll fired after the failure stop"
+pass "the consecutive-failure stop still bounds the refused-dispatch retry path"
+
+# --- (m) the ledger reports only the current night ---------------------------
+
+HOME_NIGHTS=$(make_home twonights)
+queue "$HOME_NIGHTS" alpha beta
+night "$HOME_NIGHTS" arm --budget 4 --cap 3 >/dev/null || fail "arm failed"
+night "$HOME_NIGHTS" record dispatched alpha >/dev/null
+night "$HOME_NIGHTS" record landed alpha >/dev/null
+night "$HOME_NIGHTS" disarm >/dev/null || fail "disarm failed"
+
+night "$HOME_NIGHTS" arm --budget 4 --cap 3 >/dev/null || fail "re-arm failed"
+night "$HOME_NIGHTS" record dispatched beta >/dev/null
+night "$HOME_NIGHTS" record landed beta >/dev/null
+second_night=$(night "$HOME_NIGHTS" ledger)
+
+assert_contains "$second_night" "Dispatched: 1 of 4 budgeted - beta" \
+  "the second night's ledger does not report its own dispatched work"
+assert_contains "$second_night" "Landed: 1 - beta" \
+  "the second night's ledger does not report its own landed work"
+assert_not_contains "$second_night" "alpha" \
+  "the second night's ledger carried the previous night's items"
+pass "the ledger reports only the current night, so its counts and item lists agree"
+
+# --- (n) the real quota-axi JSON shape the digest reads ----------------------
+#
+# Every other case here stubs quota-axi with the same shape the digest reads, so
+# nothing else can detect the producer moving those fields. This guard pins the
+# shape against the installed quota-axi and self-skips where it is absent, so
+# standard CI stays hermetic. A producer change must fail loudly here rather
+# than silently degrading both readings to "unavailable" and the delta to "not
+# comparable", which is the one measurement of a night's cost this fleet has.
+
+if ! command -v quota-axi >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+  echo "skip: quota-axi or jq not found (real quota shape guard)"
+elif ! quota-axi --json >/dev/null 2>&1 </dev/null; then
+  echo "skip: quota-axi --json is not usable here (real quota shape guard)"
+else
+  HOME_QUOTA=$(make_home realquota)
+  rm -f "$HOME_QUOTA/fakebin/quota-axi"
+  queue "$HOME_QUOTA" alpha
+  night "$HOME_QUOTA" arm --budget 2 --cap 2 >/dev/null || fail "arm failed"
+  real_ledger=$(night "$HOME_QUOTA" ledger)
+  real_bedtime=${real_ledger#*- Quota at bedtime: }
+  real_bedtime=${real_bedtime%%$'\n'*}
+  [ "$real_bedtime" != unavailable ] \
+    || fail "the installed quota-axi no longer yields the provider/window/percentUsed shape the digest reads"
+  printf '%s\n' "$real_bedtime" \
+    | grep -Eq '^[A-Za-z0-9_.:-]+/[A-Za-z0-9_.:-]+=[0-9]+( [A-Za-z0-9_.:-]+/[A-Za-z0-9_.:-]+=[0-9]+)*$' \
+    || fail "the real quota reading is not a provider/window=percent digest: $real_bedtime"
+  pass "the installed quota-axi still reports the provider window shape the night digest reads"
+fi
 
 echo "ALL PASS: fm-night-check"

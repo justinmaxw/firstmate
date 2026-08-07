@@ -36,6 +36,8 @@ fm_sup_stat_mtime() {
 #                         night check is to wake a home whose workers have all
 #                         finished while the queue still has ready work, so an
 #                         empty fleet must not read as "nothing to supervise".
+#   FM_SUP_X_MODE         true/false - an X-mode relay poll is registered
+#   FM_SUP_NIGHT_RUN      true/false - an overnight queue run is armed
 #   FM_SUP_WATCHER_FRESH  true/false - a watcher beacon within the grace window
 #   FM_SUP_BEACON_DESC    human-readable beacon age, for banners ("never" if absent)
 #   FM_SUP_QUEUE_PENDING  true/false - state/.wake-queue has unread records
@@ -48,6 +50,12 @@ fm_supervision_status() {
   FM_SUP_WATCHER_FRESH=false
   FM_SUP_BEACON_DESC=never
   FM_SUP_QUEUE_PENDING=false
+  # Each reason is reported separately so a banner names the one that actually
+  # applies instead of assuming any fleet-less home must be an X-mode home.
+  FM_SUP_X_MODE=false
+  FM_SUP_NIGHT_RUN=false
+  [ ! -f "$state/x-watch.check.sh" ] || FM_SUP_X_MODE=true
+  [ ! -f "$state/night-run.check.sh" ] || FM_SUP_NIGHT_RUN=true
 
   for meta in "$state"/*.meta; do
     [ -e "$meta" ] || continue
@@ -59,8 +67,8 @@ fm_supervision_status() {
     FM_SUP_SOURCES=$((FM_SUP_SOURCES + 1))
   done
   if [ "$FM_SUP_IN_FLIGHT" -gt 0 ] \
-    || [ -f "$state/x-watch.check.sh" ] \
-    || [ -f "$state/night-run.check.sh" ] \
+    || [ "$FM_SUP_X_MODE" = true ] \
+    || [ "$FM_SUP_NIGHT_RUN" = true ] \
     || [ "$FM_SUP_SOURCES" -gt 0 ]; then
     FM_SUP_NEEDED=true
   fi

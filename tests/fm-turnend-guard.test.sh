@@ -397,6 +397,19 @@ test_hook_x_mode_only_blocks_in_default_mode() {
   pass "fm-turnend-guard: X-mode-only supervision remains guarded in default mode"
 }
 
+test_hook_night_run_only_names_the_night() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-night-run-only")
+  : > "$dir/state/night-run.check.sh"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "default hook mode must block an armed-night blind turn"
+  assert_contains "$out" "An armed overnight queue run needs supervision" \
+    "an armed night's blind stop must name the night as its supervision need"
+  assert_not_contains "$out" "X-mode relay polling" \
+    "an armed night was reported as an X-mode home"
+  pass "fm-turnend-guard: an armed overnight queue run is named, not misreported as X mode"
+}
+
 test_hook_ignores_repo_state_when_fm_home_set() {
   local dir home out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-fm-home-ignore-root")
@@ -1553,6 +1566,7 @@ test_hook_blocks_when_unhealthy_in_primary
 test_hook_blocks_from_fm_home_state
 test_hook_x_mode_reason_sources_cadence
 test_hook_x_mode_only_blocks_in_default_mode
+test_hook_night_run_only_names_the_night
 test_hook_ignores_repo_state_when_fm_home_set
 test_hook_uses_state_override
 test_hook_loop_guard_allows_retry

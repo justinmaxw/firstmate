@@ -43,7 +43,9 @@
 # arm      starts a fresh night in the active FM_HOME: it records the budget and
 #          the concurrency cap, takes the bedtime `quota-axi --json` reading,
 #          writes state/night-run.check.sh, and binds it with
-#          bin/fm-check-register.sh. Re-arming replaces any prior night record.
+#          bin/fm-check-register.sh. Re-arming replaces the whole prior night:
+#          its record, its signature, and its ledger log, so one night's ledger
+#          can never report another night's items.
 # poll     is what the watcher runs. It prints at most one line and is otherwise
 #          silent. It never mutates the budget or the counters.
 # record   is how firstmate accounts for the night. `dispatched` is recorded for
@@ -247,9 +249,23 @@ ready_ids() {
   '
 }
 
-# Live ship/scout endpoints recorded in this home. Counting stops at the cap
-# because the poll goes silent at or above it either way, which bounds the
-# number of backend queries this check makes inside FM_CHECK_TIMEOUT.
+# Live ship/scout endpoints recorded in this home that are still WORKING.
+#
+# An endpoint whose last status line is a terminal verb (done, needs-decision,
+# blocked, failed) is not working, even though its window and state/<id>.meta
+# both still exist: the night deliberately leaves a parked or failed worker
+# running until morning, and AGENTS.md section 7 forbids tearing a ship task
+# down before landing is confirmed. Counting those against the cap would shrink
+# effective concurrency with every parked item and eventually silence the check
+# for the rest of the night with the queue still full - the exact 02:00 failure
+# this script exists to remove. The terminal test is the SAME predicate the
+# watcher and the away-mode daemon already use to decide a crewmate is no longer
+# working (last_status_line + status_is_terminal_verb in bin/fm-classify-lib.sh);
+# this script does not own a second one. It is also the cheaper test, so it runs
+# before the backend query.
+#
+# Counting stops at the cap because the poll goes silent at or above it either
+# way, which bounds the number of backend queries inside FM_CHECK_TIMEOUT.
 running_count() {  # <cap>
   local cap=$1 meta id kind window target backend count=0
   for meta in "$STATE"/*.meta; do
@@ -262,6 +278,7 @@ running_count() {  # <cap>
     window=$(fm_meta_get "$meta" window)
     [ -n "$window" ] || continue
     id=$(basename "$meta" .meta)
+    ! status_is_terminal_verb "$(last_status_line "$STATE/$id.status")" || continue
     backend=$(fm_backend_of_meta "$meta")
     target=$(fm_backend_target_of_meta "$meta")
     if fm_backend_target_exists "$backend" "${target:-$window}" "fm-$id"; then
@@ -306,6 +323,7 @@ command_arm() {
   quota=$(quota_digest)
   rm -f -- "$SIGNATURE"
   rm -f -- "$RECORD"
+  rm -f -- "$LOG"
   record_write \
     "armed_at=$(now_iso)" \
     "budget=$budget" \
@@ -328,13 +346,14 @@ command_arm() {
 # The one line the watcher turns into a wake. Silence is the default and the
 # safe direction: it means "nothing for firstmate to do about the queue".
 command_poll() {
-  local cap budget dispatched left ready ready_count running signature previous
+  local cap budget dispatched failures left ready ready_count running signature previous
   [ "$#" -eq 0 ] || { usage >&2; exit 2; }
   record_exists || return 0
   [ -z "$(record_get stopped)" ] || return 0
 
   budget=$(record_get_int budget)
   dispatched=$(record_get_int dispatched)
+  failures=$(record_get_int failures)
   left=$((budget - dispatched))
   [ "$left" -gt 0 ] || return 0
 
@@ -354,7 +373,14 @@ command_poll() {
   [ -n "$ready" ] || return 0
   ready_count=$(printf '%s\n' "$ready" | grep -c '')
 
-  signature=$(sha256_text "$(printf '%s\n---\n%s' "$ready" "$running")") || return 0
+  # The night's own accounting is part of the signature, so a recorded dispatch
+  # ATTEMPT re-opens the edge even when it moved neither the ready set nor the
+  # running count - a spawn that refused leaves the item in `tasks-axi ready`
+  # with no window, and without this the night would go silent forever after ONE
+  # failure instead of the documented two in a row. These counters move only when
+  # firstmate actually acts, so an idle unchanged fleet stays exactly as silent
+  # as before; the budget and the consecutive-failure stop remain the hard limits.
+  signature=$(sha256_text "$(printf '%s\n---\n%s\n%s\n%s' "$ready" "$running" "$dispatched" "$failures")") || return 0
   previous=$(cat "$SIGNATURE" 2>/dev/null || true)
   [ "$signature" != "$previous" ] || return 0
 
@@ -489,11 +515,14 @@ case "${1:-}" in
   poll)
     shift
     # Sourced lazily so `arm`, `record`, and `ledger` do not pay for the backend
-    # library, and so a poll in a half-updated tree stays silent rather than
-    # erroring into the watcher.
+    # and classifier libraries, and so a poll in a half-updated tree stays silent
+    # rather than erroring into the watcher.
     # shellcheck source=bin/fm-backend.sh
     # shellcheck disable=SC1091
     . "$SCRIPT_DIR/fm-backend.sh" || exit 0
+    # shellcheck source=bin/fm-classify-lib.sh
+    # shellcheck disable=SC1091
+    . "$SCRIPT_DIR/fm-classify-lib.sh" || exit 0
     command_poll "$@"
     ;;
   record) shift; command_record "$@" ;;

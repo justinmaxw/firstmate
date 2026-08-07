@@ -33,7 +33,7 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    Run `bin/fm-bearings-snapshot.sh` at invocation time and read its compact output.
    It is the single bounded, deterministic fleet-state source for Bearings and renders TOON by default.
    Do not create or consult a second fleet-state reader, parser contract, status-event-tail interpretation, visible-session recap, ad-hoc project probe, or ad-hoc `gh-axi`/`gh` query.
-   The one exception is night-run accounting, which is not fleet state and has its own owner: in file mode only, and only when a night was armed, also run `bin/fm-night-check.sh ledger` per participating home for the night ledger described in step 3.
+   The one exception is night-run accounting, which is not fleet state and has its own owner: in file mode only, and only when a night was armed, also run `FM_HOME=<home> bin/fm-night-check.sh ledger` once per participating home under that home's `FM_HOME` for the night ledger described in step 3.
    That command is read-only and mutates nothing, but it does take a live `quota-axi` reading, so it is the one path in this skill that is not purely local.
    The command's header and `--help` output own its exact fields, bounds, opt-ins, and output contract.
    Keep the default local-only read unless the captain asks to include PRs.
