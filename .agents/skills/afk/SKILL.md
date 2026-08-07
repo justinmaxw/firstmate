@@ -1,8 +1,9 @@
 ---
 name: afk
 description: >-
-  Enter away-mode supervision when the captain invokes /afk, says they are going afk, `state/.afk` exists, an incoming message starts with `FM_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
+  Enter away-mode supervision when the captain invokes /afk, says they are going afk, declares an overnight queue run, `state/.afk` exists, `state/night-run.check.sh` exists, an incoming message starts with `FM_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
   It sets a durable away-mode flag so the sub-supervisor daemon can self-handle routine wakes and escalate captain-relevant events plus bounded declared-external-wait rechecks as batched digests during walk-away stretches, then exits automatically when any real unmarked message returns firstmate to full per-wake responsiveness.
+  It also owns the optional overnight queue run: the bedtime procedure that arms the night check per home, the rule that an unanswerable decision is parked so the night continues, and the morning disarm.
 user-invocable: true
 metadata:
   internal: true
@@ -77,6 +78,50 @@ afk changes how aggressively firstmate surfaces things, **not who approves what*
 "Away" never means "approves more" or "approves less."
 A PR ready for merge or a needs-decision finding keeps the same configured authority and exceptions from `AGENTS.md` section 7, while anything requiring the captain still waits for the captain's explicit word.
 The daemon only batches the notification.
+
+## Overnight queue running
+
+Optional, and off unless the captain declares a night ("good night, work the queue, budget N tasks").
+An ordinary `/afk` for a walk or a meeting is unchanged and arms nothing below.
+
+A night exists because firstmate's supervision is event-driven off worker status writes and the backlog is not an event source: when the fleet empties at 02:00 with items still queued, nothing generates an event.
+`bin/fm-night-check.sh` is the one primitive that closes that gap, and its header owns every command, flag, and state file.
+There is no scheduler and no dispatch path of its own; `tasks-axi ready` remains the selector and the normal lifecycle does the rest.
+
+### Bedtime procedure
+
+1. **Declare the queue.** Confirm what `tasks-axi ready` already returns and add anything the captain names with `tasks-axi add`, recording dependencies with `tasks-axi block <a> --by <b>`.
+   Work already held stays held; an item held because it needs the captain present is not unheld to fill a night.
+2. **Hand off secondmate work** with `bin/fm-backlog-handoff.sh <secondmate> <id>...`, routing by registered scope per `AGENTS.md` section 7.
+3. **Arm each participating home** with `bin/fm-night-check.sh arm --budget <n> [--cap <n>]`, run once per home under that home's `FM_HOME`.
+   Arming takes the bedtime `quota-axi --json` reading the morning ledger needs, so it is not optional.
+   Nudge each secondmate to arm its own night in its own home rather than reconstructing its child tree from here.
+4. **Set the budgets against one quota pool.** Parallel homes draw the same window that many times faster, so N homes running a night is not N independent budgets.
+5. **Enter away mode** through the normal lifecycle above.
+
+At wake, run `bin/fm-night-check.sh disarm` in each armed home.
+Disarming keeps the night record readable, which is what the morning report's night ledger is composed from.
+
+### While away, the night continues instead of stalling
+
+Wake handling is unchanged except that nothing waits for the captain until morning:
+
+- A `check` wake reading `night: <n> ready, ...` means the queue has work and the fleet has room.
+  Apply normal intake from `AGENTS.md` section 7, dispatch, and record it with `bin/fm-night-check.sh record dispatched <id>`.
+  Record `dispatched` for every dispatch attempt, including a spawn that refused, because the budget bounds attempts; then record the outcome.
+- A `needs-decision:` or `blocked:` that firstmate has no authority to answer is **parked, not waited on**.
+  Load `ask-user-authority` as always.
+  When the decision is genuinely the captain's, open a structured captain hold through `decision-hold-lifecycle`, then block the originating work item by that hold identity with `tasks-axi block <origin-id> --by <hold-id>`.
+  That edge is what keeps the parked item out of `tasks-axi ready` until the captain answers, and it is the same edge `bin/fm-decision-hold.sh resolve` clears when routing the answer, so parking never needs new selection logic.
+  Record it with `bin/fm-night-check.sh record parked <origin-id> --reason <one line>` and move to the next ready item; one question never blocks the night.
+- A `failed:` is recorded with `record failed <id> --reason <one line>`, its branch is left for the morning, and the next item goes out.
+- Landed work is recorded with `record landed <id>`, which also resets the consecutive-failure run.
+
+The check silences itself at zero budget, after two failed dispatches in a row, and whenever nothing about the queue or the fleet has changed since it last printed.
+That silence is the design working; do not re-arm, re-register, or poll around it.
+
+Nothing here expands authority.
+A merge, an ask-user answer that is the captain's, and any destructive, irreversible, or security-sensitive action still wait for the captain exactly as they would at noon.
 
 ## Operational prefix contract
 

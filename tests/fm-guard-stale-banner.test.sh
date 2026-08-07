@@ -133,6 +133,20 @@ test_x_mode_without_live_watcher_stays_alarm() {
   pass "fm-guard stale banner: X-mode polling without a live watcher remains unhealthy"
 }
 
+test_night_run_without_live_watcher_names_the_night() {
+  local dir home out
+  dir=$(make_guard_case night-run-no-live)
+  home=$(case_home "$dir")
+  rm -f "$home/state/task.meta"
+  : > "$home/state/night-run.check.sh"
+  out=$(run_guard_case "$dir")
+  assert_contains "$out" "An armed overnight queue run needs supervision" \
+    "an armed night's banner must name the night as its supervision need"
+  assert_not_contains "$out" "X-mode relay polling" \
+    "an armed night was reported to the captain as an X-mode home"
+  pass "fm-guard stale banner: an armed overnight queue run is named, not misreported as X mode"
+}
+
 test_healthy_recovery_rearms_next_stale_episode() {
   local dir home out1 healthy out2 pid
   dir=$(make_guard_case healthy-recovery)
@@ -382,6 +396,7 @@ test_persistent_no_watcher_banner_names_missing_process
 test_persistent_no_watcher_episode_survives_beacon_touch
 test_fresh_beacon_without_live_watcher_stays_alarm
 test_x_mode_without_live_watcher_stays_alarm
+test_night_run_without_live_watcher_names_the_night
 test_healthy_recovery_rearms_next_stale_episode
 test_concurrent_same_episode_prints_one_full_banner
 test_home_isolation
