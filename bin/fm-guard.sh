@@ -5,11 +5,12 @@
 # First, always warn if the firstmate primary checkout (FM_ROOT) is on a named
 # non-default branch, because that means firstmate-on-itself work landed in the
 # primary instead of an isolated worktree.
-# Then, if a task is in flight (a state/<id>.meta exists) or X-mode relay
-# polling is active (state/x-watch.check.sh exists) and supervision is not
-# healthy, prints a loud, clearly delimited banner so the agent cannot skim past
-# it in the tool output of whatever it was doing - the one channel every harness
-# has. Supervision health is MODEL-AWARE (fm_watcher_supervision_verdict in
+# Then, if the home needs supervision (bin/fm-supervision-lib.sh: a task in
+# flight, a registered process-event source, an X-mode relay poll, or an armed
+# overnight queue run) and supervision is not healthy, prints a loud, clearly
+# delimited banner so the agent cannot skim past it in the tool output of
+# whatever it was doing - the one channel every harness has.
+# Supervision health is MODEL-AWARE (fm_watcher_supervision_verdict in
 # bin/fm-wake-lib.sh): under the Claude Stop auto-arm model the watcher runs only
 # between turns, so mid-turn a fresh beacon with no live watcher is healthy and
 # only a stale beacon (beyond FM_GUARD_GRACE) is a genuine lapse; under every
