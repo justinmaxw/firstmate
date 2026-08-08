@@ -17,14 +17,25 @@ HEADER='date,project,task_id,kind,dispatched,pr_opened,merged,captain_msgs,escal
 MAIN="$TMP_ROOT/main"
 SM_PRESENT="$TMP_ROOT/sm-present"
 SM_EMPTY="$TMP_ROOT/sm-empty"
-mkdir -p "$MAIN/data" "$SM_PRESENT/data" "$SM_EMPTY/data"
+SM_SKEWED="$TMP_ROOT/sm-skewed"
+mkdir -p "$MAIN/data" "$SM_PRESENT/data" "$SM_EMPTY/data" "$SM_SKEWED/data"
 METRICS="$MAIN/data/metrics.csv"
 
 {
   printf -- '- present - lab (home: %s; scope: x; projects: ; added 2026-01-01)\n' "$SM_PRESENT"
   printf -- '- absent - lab (home: %s; scope: x; projects: ; added 2026-01-01)\n' "$TMP_ROOT/sm-never-seeded"
+  printf -- '- skewed - lab (home: %s; scope: x; projects: ; added 2026-01-01)\n' "$SM_SKEWED"
   printf -- '- faraway - lab (host: box; root: /srv/fm; home: /srv/home; scope: x; projects: ; added 2026-01-01)\n'
 } > "$MAIN/data/secondmates.md"
+
+# A metrics.csv whose columns are not this script's: hand-edited, or written by
+# a different version. summarize reads by column position, so counting these
+# rows would put someone else's numbers in the captain's totals.
+{
+  printf 'date,project,task_id,captain_msgs,rework_48h\n'
+  printf '2026-08-01,other,x1,999,1\n'
+  printf '2026-08-02,other,x2,999,1\n'
+} > "$SM_SKEWED/data/metrics.csv"
 
 main_run() {  # <args...>
   RC=0
@@ -112,6 +123,13 @@ assert_contains "$OUT" 'no rows' "a missing file is reported as no rows"
 assert_not_contains "$OUT" 'absent: tasks=0' "a missing file is never reported as zero work"
 assert_contains "$OUT" 'faraway: not readable from here (remote route on box)' "a remote route is reported, not silently skipped"
 
+# A file whose columns are not this script's is its own reported state: never
+# silently skipped, and never summed into a total by column position. Its two
+# rows would make the fleet tasks=5 and wreck captain_msgs_per_task if counted.
+assert_contains "$OUT" "skewed ($SM_SKEWED): column header does not match this script, not counted" "a mismatched header is reported as its own state"
+assert_not_contains "$OUT" 'skewed: no rows' "a mismatched header is not passed off as an empty file"
+assert_not_contains "$OUT" 'skewed ('"$SM_SKEWED"'): tasks=' "a mismatched header is never summarized as work"
+
 # Medians are computed from rows, not by averaging per-home medians: main is
 # 6h and 10h, the second mate is 2h, so the fleet median is the middle value 6.
 assert_contains "$OUT" 'main ('"$MAIN"'): tasks=2 median_hours_dispatch_to_merge=8.0' "the main median is the middle of its own rows"
@@ -122,7 +140,28 @@ assert_contains "$OUT" 'captain_msgs_per_task=2.3' "captain messages per task ar
 assert_contains "$OUT" 'escalation decision: 2' "decisions are counted across homes"
 assert_contains "$OUT" 'escalation merge: 1' "each escalation type is counted separately"
 assert_contains "$OUT" 'escalation blocker: 1' "every type in the set appears"
+assert_contains "$OUT" 'FLEET TOTAL: tasks=3' "a mismatched file's rows never reach the fleet total"
 pass "summarize reads this home plus every registered second mate and separates no-rows from zero work"
+
+# The paired counterpart: the very same rows, changed only in their header line,
+# are counted. Without the header check the case above would have read these two
+# rows into the totals through the wrong columns.
+{
+  printf '%s\n' "$HEADER"
+  printf '2026-08-01,other,x1,ship,2026-08-01T00:00:00Z,,2026-08-01T04:00:00Z,3,0,,0\n'
+  printf '2026-08-02,other,x2,ship,2026-08-02T00:00:00Z,,2026-08-02T04:00:00Z,3,0,,0\n'
+} > "$SM_SKEWED/data/metrics.csv"
+main_run summarize
+expect_code 0 "$RC" "summarize with a corrected header"$'\n'"$OUT"
+assert_contains "$OUT" "skewed ($SM_SKEWED): tasks=2" "the same rows under this script's header are read"
+assert_contains "$OUT" 'FLEET TOTAL: tasks=5' "the corrected rows do reach the fleet total"
+pass "only the header line decides whether a second mate's rows are counted"
+
+{
+  printf 'date,project,task_id,captain_msgs,rework_48h\n'
+  printf '2026-08-01,other,x1,999,1\n'
+  printf '2026-08-02,other,x2,999,1\n'
+} > "$SM_SKEWED/data/metrics.csv"
 
 main_run summarize --since 2026-08-02
 expect_code 0 "$RC" "summarize --since"$'\n'"$OUT"

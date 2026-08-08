@@ -243,6 +243,84 @@ expect_code 1 "$RC" "section 9 excluding a path section 8 maps"
 assert_contains "$OUT" 'tests/target.test.sh is out of scope' "an explicit non-goal still wins over a section 8 mapping"
 pass "section 9 still overrides the paths scope treats as implicitly declared"
 
+# A backtick-quoted token is ONE pattern even when it holds a space. Section 3's
+# template invites CI commands in backticks, and word-splitting one would put an
+# unrelated tree in scope under the word `test`.
+mkdir -p "$REPO/test"
+printf 'scratch\n' > "$REPO/test/scratch.ts"
+
+QUOTED_CMD="$TMP_ROOT/quoted-command-spec.md"
+sed "s|under ${BT}src/views/${BT}\.|under ${BT}src/views/${BT}. Tests run with ${BT}pnpm run test${BT}.|" \
+  "$SPEC_IN_REPO" > "$QUOTED_CMD"
+scope_in_repo "$QUOTED_CMD" --base main
+expect_code 1 "$RC" "a quoted multi-word CI command in section 3"
+assert_contains "$OUT" 'test/scratch.ts is outside the allowed set' "a quoted command never widens the allowed set to one of its words"
+
+# The counterpart: the same sentence quoting a token that really is a path. Only
+# the space between the words differs, so the case above could have failed.
+QUOTED_PATH="$TMP_ROOT/quoted-path-spec.md"
+sed "s|under ${BT}src/views/${BT}\.|under ${BT}src/views/${BT}. Tests run with ${BT}test${BT}.|" \
+  "$SPEC_IN_REPO" > "$QUOTED_PATH"
+scope_in_repo "$QUOTED_PATH" --base main
+expect_code 0 "$RC" "a single quoted token that really is a path"$'\n'"$OUT"
+rm -rf "$REPO/test"
+
+# The same, in the direction that matters most: section 9 is the captain's own
+# boundary, so it has to keep applying to a path whose name holds a space. Both
+# sections name this directory, so only section 9 can reject it.
+mkdir -p "$REPO/src/legacy code"
+printf 'legacy\n' > "$REPO/src/legacy code/x.ts"
+
+SPACED_DENY="$TMP_ROOT/spaced-nongoal-spec.md"
+sed -e "s|under ${BT}src/views/${BT}\.|under ${BT}src/views/${BT} and ${BT}src/legacy code/${BT}.|" \
+    -e "s|^${BT}src/billing.ts${BT}\$|${BT}src/billing.ts${BT} and ${BT}src/legacy code/${BT}|" \
+  "$SPEC_IN_REPO" > "$SPACED_DENY"
+scope_in_repo "$SPACED_DENY" --base main
+expect_code 1 "$RC" "a section 9 non-goal whose path holds a space"
+assert_contains "$OUT" "src/legacy code/x.ts is out of scope: section 9 excludes 'src/legacy code/'" "a non-goal with a space still excludes its own path"
+
+# The counterpart: the same tree and the same section 3, with only the section 9
+# entry dropped, is in scope - so the refusal above really came from section 9.
+SPACED_ALLOW="$TMP_ROOT/spaced-allowed-spec.md"
+sed "s|under ${BT}src/views/${BT}\.|under ${BT}src/views/${BT} and ${BT}src/legacy code/${BT}.|" \
+  "$SPEC_IN_REPO" > "$SPACED_ALLOW"
+scope_in_repo "$SPACED_ALLOW" --base main
+expect_code 0 "$RC" "an allowed directory whose name holds a space"$'\n'"$OUT"
+rm -rf "$REPO/src/legacy code"
+pass "a backtick-quoted path containing a space stays one pattern in both sections"
+
+# A rename reported as its destination alone would hide that a section 9 file
+# was removed, so `git mv <non-goal> <allowed path>` has to fail scope. The
+# source has to exist on the base for the removal to be real.
+git -C "$REPO" checkout -q main
+mkdir -p "$REPO/src"
+printf 'billing\n' > "$REPO/src/billing.ts"
+git -C "$REPO" add -A && git -C "$REPO" commit -qm 'billing exists on main'
+git -C "$REPO" checkout -q feature
+git -C "$REPO" merge -q --no-edit main
+
+scope_in_repo "$SPEC_IN_REPO" --base main
+expect_code 0 "$RC" "the tree before the rename"$'\n'"$OUT"
+
+git -C "$REPO" mv "src/billing.ts" "src/views/moved.tsx"
+scope_in_repo "$SPEC_IN_REPO" --base main
+expect_code 1 "$RC" "an uncommitted rename out of a section 9 path"
+assert_contains "$OUT" 'src/billing.ts is out of scope' "a staged rename still reports the path it moved away from"
+
+git -C "$REPO" commit -qm 'move billing into views'
+scope_in_repo "$SPEC_IN_REPO" --base main
+expect_code 1 "$RC" "a committed rename out of a section 9 path"
+assert_contains "$OUT" 'src/billing.ts is out of scope' "a committed rename still reports the path it moved away from"
+
+# The counterpart: a rename between two allowed paths is in scope, so the two
+# cases above failed on the source path rather than on renames as such.
+git -C "$REPO" checkout -q main -- src/billing.ts
+git -C "$REPO" mv "src/views/moved.tsx" "src/views/moved-again.tsx"
+git -C "$REPO" add -A && git -C "$REPO" commit -qm 'rename inside the allowed set'
+scope_in_repo "$SPEC_IN_REPO" --base main
+expect_code 0 "$RC" "a rename between two allowed paths"$'\n'"$OUT"
+pass "a rename cannot smuggle a section 9 path out of the tree"
+
 # --- ac ----------------------------------------------------------------------
 
 ac_in_repo() {

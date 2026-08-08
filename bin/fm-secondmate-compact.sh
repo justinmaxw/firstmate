@@ -77,10 +77,15 @@
 #
 # Exit status:
 #   0  compacted and confirmed
-#   1  refused before anything was sent, or the send itself failed
+#   1  refused, or a send itself failed. Most of these happen before anything
+#      reaches the agent, but a refusal can also happen AFTER the stow request
+#      was delivered and swept; every such message says plainly whether the stow
+#      landed and whether anything was compacted (nothing ever was, on exit 1).
 #   2  usage error
 #   3  the stow was never confirmed; no compaction command was sent
 #   4  the compaction command was sent but never confirmed
+#   5  the compaction was confirmed, but the follow-up re-orientation was not
+#      delivered; the context IS compacted and the agent needs steering by hand
 #
 # Environment:
 #   FM_HOME              active firstmate home (required)
@@ -390,13 +395,13 @@ say "'$ID' reported its stow complete"
 # compaction.
 
 if [ "$(transcript_signature)" = "$TRANSCRIPT_BEFORE" ]; then
-  die 1 "'$ID' completed a turn but nothing was written to $TDIR (still $TRANSCRIPT_BEFORE), so this session is not recording transcripts; refusing to send a compaction command whose completion could not be confirmed. $NO_TRANSCRIPT_FIX"
+  die 1 "'$ID' completed a turn but nothing was written to $TDIR (still $TRANSCRIPT_BEFORE), so this session is not recording transcripts; refusing to send a compaction command whose completion could not be confirmed. The stow already landed and nothing was compacted. $NO_TRANSCRIPT_FIX"
 fi
 
 # --- step 4: compact ---------------------------------------------------------
 
-wait_until_settled "$STOW_TIMEOUT" "after reporting its stow"
-refuse_if_home_has_crew "before the compaction command"
+wait_until_settled "$STOW_TIMEOUT" "after reporting its stow (the stow already landed; nothing was compacted)"
+refuse_if_home_has_crew "after the stow landed but before the compaction command (nothing was compacted)"
 
 newest_compaction_ts() {
   local f
@@ -454,7 +459,7 @@ say "compaction confirmed for '$ID' at $CONFIRMED_TS"
 
 REORIENT="Your conversation context was just compacted by the main firstmate. Re-read this home's AGENTS.md and data/charter.md now, then go back to waiting silently for routed work. Do not start anything new."
 if ! send_to "$TARGET" "$REORIENT"; then
-  die 1 "'$ID' was compacted at $CONFIRMED_TS but the follow-up instruction to re-read its own AGENTS.md and charter was not delivered; steer it by hand"
+  die 5 "'$ID' was compacted at $CONFIRMED_TS - the stow landed and the compaction is confirmed - but the follow-up instruction to re-read its own AGENTS.md and charter was not delivered; steer it by hand"
 fi
 
 say "'$ID' compacted and re-oriented"

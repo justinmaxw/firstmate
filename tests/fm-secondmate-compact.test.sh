@@ -3,8 +3,10 @@
 #
 # Drives the real script through its public CLI with a fake tmux endpoint and a
 # fake send command, and pins the two properties that make the sequence safe:
-# every refusal happens BEFORE anything reaches the agent, and neither the stow
-# nor the compaction is ever reported as done without its own positive evidence.
+# every refusal over an unsafe target happens BEFORE anything reaches the agent,
+# and neither the stow nor the compaction is ever reported as done without its
+# own positive evidence. A refusal that can only happen after the stow landed
+# says so, and a confirmed compaction whose follow-up failed has its own code.
 #
 # Each "did not send" assertion reads the send log, so a check that passes
 # because nothing ran at all would still fail its ordering assertion.
@@ -385,7 +387,26 @@ pass "the confirmed sequence is stow, compact, re-orient, in that order"
 new_case
 export FM_FAKE_SEND_FAIL='Re-read this home'
 run_sut
-expect_code 1 "$RC" "re-orientation failure"
+expect_code 5 "$RC" "re-orientation failure"
 assert_contains "$OUT" 'was not delivered' "a failed re-orientation is reported"
 assert_contains "$OUT" 'compacted at' "a failed re-orientation still reports the compaction"
-pass "a failed re-orientation after a real compaction is reported, not swallowed"
+assert_contains "$OUT" 'the compaction is confirmed' "the operator is told the context really was compacted"
+pass "a failed re-orientation after a real compaction gets its own exit code, not the pre-send refusal code"
+
+# The refusals that happen AFTER the stow request landed keep exit 1, but must
+# not read as "nothing reached the agent": each one says what did land.
+new_case
+export FM_FAKE_STOW_TRANSCRIPT=0
+run_sut
+expect_code 1 "$RC" "post-stow refusal on a dead confirmation channel"
+assert_contains "$OUT" 'The stow already landed and nothing was compacted' "a post-stow refusal states what landed"
+
+new_case
+"$ROOT/bin/fm-busy-event.sh" arm "$SENDER/state" "$ID" >/dev/null
+"$ROOT/bin/fm-busy-event.sh" apply "$SENDER/state" "$ID" idle \
+  --current-gen --source claude-hook --event stop
+export FM_FAKE_BUSY_AFTER_STOW=stuck
+run_sut
+expect_code 1 "$RC" "post-stow refusal on an agent that never settles"
+assert_contains "$OUT" 'the stow already landed; nothing was compacted' "an unsettled agent's refusal states what landed"
+pass "every post-stow exit 1 names what already reached the agent"

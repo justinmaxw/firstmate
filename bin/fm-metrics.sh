@@ -305,6 +305,14 @@ report_home() {  # <label> <metrics-file> <since> <accumulator-file>
     printf '%s: not readable (%s)\n' "$label" "$file"
     return 0
   fi
+  # summarize_awk reads by column position, so a file whose columns are not this
+  # script's would be summed into this block and the fleet total from the wrong
+  # fields. Reported as its own state rather than skipped or counted as zero: a
+  # wrong number that looks right is worse than no number.
+  if ! head -1 "$file" | grep -qxF "$HEADER"; then
+    printf '%s: column header does not match this script, not counted (%s)\n' "$label" "$file"
+    return 0
+  fi
   out=$(summarize_awk "$since" < "$file")
   print_block "$label" "$out"
   # Feed the same rows into the fleet accumulator so the total is computed from

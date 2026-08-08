@@ -356,6 +356,30 @@ path_matches() {  # <changed-path> <pattern>
   return 1
 }
 
+# Does any pattern in a newline-separated list match this path?
+#
+# One pattern per line, never word-split: a backtick-quoted token may contain a
+# space. Splitting on IFS would both widen the allowed set (a quoted CI command
+# such as `pnpm run test` would become three unrelated patterns, one of which
+# matches the whole test tree) and narrow section 9 (a non-goal written as
+# `src/legacy code/` would become two patterns matching neither half of it).
+# Sets the matching pattern in MATCHED_PATTERN so a refusal can quote it.
+matches_any() {  # <changed-path> <newline-separated-patterns>
+  local path=$1 patterns=$2 pattern
+  MATCHED_PATTERN=
+  [ -n "$patterns" ] || return 1
+  while IFS= read -r pattern; do
+    [ -n "$pattern" ] || continue
+    if path_matches "$path" "$pattern"; then
+      MATCHED_PATTERN=$pattern
+      return 0
+    fi
+  done <<EOF
+$patterns
+EOF
+  return 1
+}
+
 # The test paths section 8 already maps acceptance criteria to. `scope` treats
 # these as declared, so a spec never has to name the same path twice.
 section_test_paths() {  # <spec>
@@ -382,6 +406,27 @@ spec_path_in_repo() {  # <spec>
   esac
 }
 
+# Every uncommitted path, one per line, both sides of a rename included.
+#
+# `-z` rather than the human format on purpose: without it git C-quotes any path
+# holding a space, so `src/legacy code/x.ts` arrives as `"src/legacy code/x.ts"`
+# and matches neither an allowed nor a section 9 pattern - the one file the
+# captain excluded would slip through as merely unrecognised. With `-z` the
+# rename source is a second NUL-terminated record after its entry rather than
+# the far side of an arrow, so it is read here rather than parsed out.
+status_paths() {
+  local entry source
+  while IFS= read -r -d '' entry; do
+    printf '%s\n' "${entry:3}"
+    case "${entry:0:2}" in
+      *[RC]*)
+        IFS= read -r -d '' source || break
+        printf '%s\n' "$source"
+        ;;
+    esac
+  done < <(git status --porcelain -z --untracked-files=all)
+}
+
 changed_files() {  # <base-ref>
   local base=$1 merge_base
   git rev-parse --git-dir >/dev/null 2>&1 \
@@ -390,11 +435,14 @@ changed_files() {  # <base-ref>
     merge_base=$(git merge-base "$base" HEAD 2>/dev/null || true)
   fi
   {
+    # --no-renames on purpose: a rename reported as its destination alone hides
+    # that a source path was removed, so `git mv <section 9 path> <allowed path>`
+    # would pass the very check that exists to catch it.
     if [ -n "${merge_base:-}" ]; then
-      git diff --name-only "$merge_base" HEAD
+      git diff --name-only --no-renames -z "$merge_base" HEAD | tr '\0' '\n'
     fi
     # Uncommitted work counts: the worker runs this before it reports done.
-    git status --porcelain --untracked-files=all | sed -E 's/^.{3}//; s/^.* -> //'
+    status_paths
   } | grep -v '^$' | LC_ALL=C sort -u
 }
 
@@ -418,7 +466,7 @@ resolve_base() {  # <requested-base>
 command_scope() {
   read_spec "${1:-}"
   shift || true
-  local base='' allowed denied file matched pattern
+  local base='' allowed denied file
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --base) [ "$#" -ge 2 ] || die 2 "--base needs a value"; base=$2; shift 2 ;;
@@ -453,20 +501,11 @@ command_scope() {
 
   while IFS= read -r file; do
     [ -n "$file" ] || continue
-    for pattern in $denied; do
-      if path_matches "$file" "$pattern"; then
-        problem "$file is out of scope: section 9 excludes '$pattern'"
-        continue 2
-      fi
-    done
-    matched=0
-    for pattern in $allowed; do
-      if path_matches "$file" "$pattern"; then
-        matched=1
-        break
-      fi
-    done
-    [ "$matched" -eq 1 ] \
+    if matches_any "$file" "$denied"; then
+      problem "$file is out of scope: section 9 excludes '$MATCHED_PATTERN'"
+      continue
+    fi
+    matches_any "$file" "$allowed" \
       || problem "$file is outside the allowed set declared in sections 3 and 12"
   done <<EOF
 $files
