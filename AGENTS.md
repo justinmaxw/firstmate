@@ -349,6 +349,9 @@ After successful teardown, record completion, retain only the configured recent 
 A secondmate is persistent and an empty queue is healthy.
 Retire one only on an explicit captain or main-firstmate decision, after loading `secondmate-provisioning`; its home must contain no work under way, and forced discard still requires explicit captain authority.
 
+Because a secondmate supervises task after task in one session, compact its context with `bin/fm-secondmate-compact.sh <id>` after a PR from its domain lands and that work is cleaned up, once the secondmate is idle.
+Firstmate initiates that run; it is never a timer, daemon, or registered check, and the script owns the stow-first sequence and every refusal.
+
 ### Scout outcome and promotion
 
 A completed scout must leave a self-contained report before its scratch worktree can be discarded; read and relay its findings, record the report as the Done artifact, and re-evaluate the queue.

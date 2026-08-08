@@ -164,6 +164,20 @@ Natural language is acceptable if uncertain.
 - grok: `/<skill>`, for example `/no-mistakes` (same form as claude). Verified end to end: grok discovers the user-level `no-mistakes` skill, `/no-mistakes` invokes it, and grok drives a real `no-mistakes axi run`. Like codex's `$`/`/` popups, typing `/<skill>` opens grok's slash-autocomplete, so a too-fast Enter selects the popup entry instead of sending, and for an argument-taking command (like `/no-mistakes`'s optional task-first argument) that first Enter only expands the popup selection into an argument-hint placeholder rather than submitting - a genuine second Enter is required (see the grok section below for the 2026-07-03 incident and fix). `fm_tmux_submit_core`'s retried Enter (used by `fm-send` on the tmux backend) handles this through the structural composer reader; the herdr backend needed a dedicated fix (`fm_backend_herdr_composer_state`, docs/herdr-backend.md) because its prior delta-based verification false-positived on that same popup-close content change.
 - kimi: `/<skill>`, for example `/no-mistakes`.
 
+## Context compaction
+
+A persistent secondmate's conversation grows forever, so firstmate compacts it through `bin/fm-secondmate-compact.sh`, which owns the whole sequence and its refusals.
+This section owns only the per-harness facts that script reads.
+A harness belongs in the table below only once BOTH its compaction command and a machine-readable completion signal are live-verified; a command alone would let firstmate send something it can never confirm, so the helper refuses every harness that is not listed rather than guessing.
+
+| Harness | Compaction command | Completion signal |
+|---|---|---|
+| claude | `/compact`, typed into the composer. Verified 2026-08-07 on Claude Code 2.1.224 against a real firstmate-launched secondmate: `fm-send` delivers it and the pane shows `Compacting conversation…`. It takes an optional instruction argument, so it opens the same argument-hint slash popup grok's `/compact` does; the backends' submit verification lands it. On a short conversation Claude answers `Not enough messages to compact.` and nothing is compacted. | A transcript entry carrying `"isCompactSummary":true` with the compaction's own `"timestamp"`, appended under `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<slug>/`, where `<slug>` is the session's cwd with every non-alphanumeric character replaced by a dash. Verified 2026-08-07 on 2.1.224. Claude Code turns transcript saving OFF when it inherits a `CLAUDE_CODE_CHILD_SESSION` marker, so a secondmate launched from a nested Claude session writes no signal at all; `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1` restores it. |
+
+The other verified adapters have no compaction row yet.
+Grok exposes `/compact` (see the grok section's argument-hint incident), but its completion signal has not been live-verified, so it stays out of the table and the helper refuses it.
+`docs/verification/supervision.md` "Secondmate context compaction" owns the dated evidence, and `tests/fm-secondmate-compact-live-e2e.test.sh` is the command that refreshes it.
+
 ## Submission acknowledgement hazards
 
 A send or key action reporting success is not proof that the intended action happened.
@@ -178,6 +192,9 @@ The shared symptom is a healthy-looking pane with no work in progress, so each a
 | Exit command | `/exit` |
 | Interrupt | single Escape |
 | Skill invocation | `/<skill>` (e.g. `/no-mistakes`) |
+| Compaction | `/compact`; see the [context-compaction section](#context-compaction) for its completion signal |
+
+`SessionStart` does not fire on `compact`, so nothing re-injects a compacted session's operating instructions; whatever compacts a firstmate-family session must point it back at its own `AGENTS.md` afterwards.
 
 First launch in a fresh worktree, or first ever on a machine, may show a trust or bypass-permissions confirmation.
 After every spawn, peek the pane within about 20 seconds.
