@@ -476,7 +476,12 @@ command_scope() {
   done
   FAILED=0
 
-  base=$(resolve_base "$base")
+  # `die` inside a command substitution exits only that subshell, so both of
+  # these have to propagate the refusal themselves. Without it an unresolvable
+  # base or a non-repository would fall through to an empty file list and
+  # report every change in scope - the one wrong answer this command must
+  # never give.
+  base=$(resolve_base "$base") || exit $?
   # Sections 3 and 12 are what the spec declares. Section 8's mapped test paths
   # and the spec file itself are added because requiring the same path in two
   # places is bookkeeping people forget, and every forgotten one is a false
@@ -493,7 +498,7 @@ command_scope() {
     || die 1 "$SPEC declares no allowed paths in sections 3 or 12, so no change can be in scope"
 
   local files
-  files=$(changed_files "$base")
+  files=$(changed_files "$base") || exit $?
   if [ -z "$files" ]; then
     ok "no files changed against $base; nothing to scope-check"
     return 0

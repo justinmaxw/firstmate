@@ -166,6 +166,10 @@ REPO="$TMP_ROOT/repo"
 fm_git_identity
 mkdir -p "$REPO/src/views" "$REPO/tests"
 fm_git_init_commit "$REPO"
+# Every scope case below bases on `main`, and `git init`'s default branch name
+# comes from the host's init.defaultBranch, so name it here rather than inherit
+# whatever the machine running the test happens to be configured for.
+git -C "$REPO" branch -M main
 git -C "$REPO" checkout -q -b feature
 SPEC_IN_REPO="$TMP_ROOT/repo-spec.md"
 write_good_spec "$SPEC_IN_REPO"
@@ -230,6 +234,19 @@ expect_code 1 "$RC" "committed stray work"
 assert_contains "$OUT" 'src/unrelated.ts is outside the allowed set' "a committed stray file is caught too"
 git -C "$REPO" rm -q "src/unrelated.ts" && git -C "$REPO" commit -qm 'drop stray'
 pass "scope passes a clean diff and fails on both a stray path and a section 9 path"
+
+# A base ref that does not resolve has to refuse. The paired case above is the
+# same tree against a base that does resolve, so the only difference is the ref
+# name: a swallowed refusal here would silently report every change in scope.
+printf 'stray\n' > "$REPO/src/unrelated.ts"
+scope_in_repo "$SPEC_IN_REPO" --base no-such-branch
+expect_code 2 "$RC" "a base ref that does not resolve"
+assert_contains "$OUT" "base ref 'no-such-branch' does not resolve" "the unresolvable base is named"
+assert_not_contains "$OUT" 'nothing to scope-check' "an unresolvable base never reports a clean tree"
+scope_in_repo "$SPEC_IN_REPO" --base main
+expect_code 1 "$RC" "the same tree against a base that resolves"
+rm -f "$REPO/src/unrelated.ts"
+pass "scope refuses an unresolvable base instead of reporting the tree in scope"
 
 # Section 9 is the captain's own boundary and still wins over the implicit
 # allowance, so an explicit non-goal cannot be smuggled back in through a
