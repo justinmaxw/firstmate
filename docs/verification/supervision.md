@@ -322,7 +322,7 @@ Observed record fields on 2.1.224:
 
 Run evidence, with the control asserted before the run: 4 conversation turns and 0 compaction records before, 1 after, and the secondmate's own `data/` gained `learnings.md` and `projects.md` from the stow that preceded the compaction.
 
-Environment limit worth pinning: Claude Code disables transcript saving when it inherits a `CLAUDE_CODE_CHILD_SESSION` marker, printing `Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker` and suggesting `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`.
+Environment limit worth pinning: Claude Code disables transcript saving when it inherits a `CLAUDE_CODE_CHILD_SESSION` marker, printing a notice that transcript saving is off, naming the inherited marker as the reason, and suggesting `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`.
 A secondmate launched from a nested Claude session therefore writes no completion signal at all.
 The helper probes for that before sending anything, and the live guard provisions its lab session with the marker cleared so it reproduces the captain's top-level-primary conditions.
 
