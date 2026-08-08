@@ -491,3 +491,41 @@ Observed output:
 ```
 
 The safe command-channel contract is covered without a notification by `tests/fm-daemon.test.sh`: the summary reaches both `$1` and stdin, every channel is process-group bounded, and a failed channel falls through.
+
+## Secondmate context compaction
+
+`bin/fm-secondmate-compact.sh` rests on two Claude Code facts, both re-verified on 2026-08-07 with Claude Code 2.1.224 and Herdr 0.8.0 against a real firstmate-launched secondmate in an isolated Herdr lab session.
+
+Refresh command (opt-in; launches a real Claude process and spends tokens):
+
+```sh
+FM_SECONDMATE_COMPACT_LIVE_E2E=1 tests/fm-secondmate-compact-live-e2e.test.sh
+```
+
+Fact 1 - `/compact` delivered by `bin/fm-send.sh` really compacts a spawned secondmate pane.
+Observed pane output after the send:
+
+```
+❯ /compact
+
+✽ Compacting conversation… (43s)
+```
+
+On a conversation too short to compact, the same send is answered with `Not enough messages to compact.` and nothing is compacted, so an unconfirmed result is reported rather than assumed.
+
+Fact 2 - a completed compaction is recorded on disk.
+The transcript directory is `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<slug>/`, where `<slug>` is the session's cwd with every non-alphanumeric character replaced by a dash.
+A completed compaction adds one entry there carrying `"isCompactSummary":true` and the compaction's own timestamp.
+Observed record fields on 2.1.224:
+
+```json
+{"parentUuid":"...","isSidechain":false,"type":"user","isVisibleInTranscriptOnly":true,"isCompactSummary":true,"timestamp":"2026-08-08T01:55:06.783Z","cwd":"...","sessionId":"...","version":"2.1.224"}
+```
+
+Run evidence, with the control asserted before the run: 4 conversation turns and 0 compaction records before, 1 after, and the secondmate's own `data/` gained `learnings.md` and `projects.md` from the stow that preceded the compaction.
+
+Environment limit worth pinning: Claude Code disables transcript saving when it inherits a `CLAUDE_CODE_CHILD_SESSION` marker, printing a notice that transcript saving is off, naming the inherited marker as the reason, and suggesting `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`.
+A secondmate launched from a nested Claude session therefore writes no completion signal at all.
+The helper probes for that before sending anything, and the live guard provisions its lab session with the marker cleared so it reproduces the captain's top-level-primary conditions.
+
+Portable regression: `tests/fm-secondmate-compact.test.sh`.

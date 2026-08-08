@@ -162,6 +162,8 @@ Backends that already refuse secondmate launch, currently Orca and cmux, remain 
 
 Startup liveness recovery relaunches a dead or missing remote second mate through this same command, so recovery passes the same readiness gate rather than a weaker one.
 
+Context compaction is local-only: `bin/fm-secondmate-compact.sh` confirms a compaction from local session state, so it refuses a remote route rather than compacting one it could not confirm.
+
 Send routed requests normally:
 
 ```sh

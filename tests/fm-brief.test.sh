@@ -710,6 +710,166 @@ test_scout_and_secondmate_scaffold() {
   pass "fm-brief: scout and secondmate code paths still scaffold well-formed briefs"
 }
 
+# --- spec-backed ship briefs -------------------------------------------------
+
+# A spec-backed brief is where the spec stops being advice and becomes the
+# contract the worker is held to, so both halves matter: the criteria must
+# arrive verbatim WITH the two enforcement commands, and a brief scaffolded
+# without --spec must be byte-identical to what this script always produced.
+
+write_spec_fixture() {  # <path>
+  cat > "$1" <<'SPEC'
+# Spec: Refill alerting          ID: vending-3    Tier: FULL
+Status: CAPTAIN-APPROVED
+
+## 1. Problem statement
+Route drivers restock blind.
+
+## 2. User-facing behavior
+A refill list per machine.
+
+## 3. Existing-system touchpoints
+`src/refill.ts`
+
+## 4. Interfaces & contracts
+None new.
+
+## 5. Data model
+No migration.
+
+## 6. Edge cases & failure behavior
+Empty list renders the empty state.
+
+## 7. Acceptance criteria
+AC-1 Given a machine below threshold, when the list renders, then it appears.
+AC-2 Given no machines, when the list renders, then the empty state appears.
+AC-3 The printed sheet is legible at arm's length. manual-check: a human must hold paper.
+
+## 8. Test plan
+| AC | Test | Type | New |
+|---|---|---|---|
+| AC-1 | tests/target.test.sh | unit | new |
+| AC-2 | tests/target.test.sh | unit | new |
+
+## 9. Out of scope
+`src/billing.ts`
+
+## 10. Open questions
+- Which threshold? Answer: 20 percent.
+
+## 11. Risk & rollout
+Low.
+
+## 12. Task decomposition
+1. Build the list. ACs owned: AC-1, AC-2. Files: `src/refill.ts`
+SPEC
+}
+
+test_spec_flag_carries_criteria_and_pins_enforcement() {
+  local home spec spec_abs brief
+  home="$TMP_ROOT/spec-home"
+  mkdir -p "$home/data" "$home/state"
+  spec="$TMP_ROOT/spec-fixture.md"
+  write_spec_fixture "$spec"
+  # The brief records the RESOLVED spec path, so compare against the same
+  # resolution rather than against a possibly symlinked TMPDIR.
+  spec_abs="$(cd "$(dirname "$spec")" && pwd -P)/$(basename "$spec")"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-spec-all repo --mode no-mistakes --spec "$spec" >/dev/null \
+    || fail "fm-brief.sh --spec exited non-zero"
+  brief="$home/data/brief-spec-all/brief.md"
+  assert_present "$brief" "spec-backed brief was not scaffolded"
+
+  # Verbatim: the spec's own criterion lines, not a paraphrase.
+  assert_grep 'AC-1 Given a machine below threshold, when the list renders, then it appears.' "$brief" \
+    "the brief must carry AC-1 verbatim from the spec"
+  assert_grep 'AC-2 Given no machines, when the list renders, then the empty state appears.' "$brief" \
+    "the brief must carry AC-2 verbatim from the spec"
+  assert_grep 'manual-check: a human must hold paper.' "$brief" \
+    "a manual-check criterion and its reason must reach the worker too"
+  assert_grep "$spec_abs" "$brief" "the brief must name the spec it came from"
+
+  # Pinned enforcement, in the definition of done rather than as a suggestion.
+  assert_grep "bin/fm-spec.sh scope $spec_abs" "$brief" \
+    "the definition of done must require the scope check"
+  assert_grep "bin/fm-spec.sh ac $spec_abs" "$brief" \
+    "the definition of done must require the acceptance-criteria check"
+  assert_grep 'Before you report done' "$brief" \
+    "the enforcement must be required before the worker reports done"
+  pass "fm-brief: --spec carries the criteria verbatim and pins both enforcement commands"
+}
+
+test_spec_ac_selects_the_tasks_own_criteria() {
+  local home spec brief out rc
+  home="$TMP_ROOT/spec-subset-home"
+  mkdir -p "$home/data" "$home/state"
+  spec="$TMP_ROOT/spec-fixture.md"
+  write_spec_fixture "$spec"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-spec-subset repo --mode no-mistakes \
+    --spec "$spec" --spec-ac 'AC-2' >/dev/null \
+    || fail "fm-brief.sh --spec-ac exited non-zero"
+  brief="$home/data/brief-spec-subset/brief.md"
+  assert_grep 'AC-2 Given no machines' "$brief" "the selected criterion must be present"
+  assert_no_grep 'AC-1 Given a machine below threshold' "$brief" \
+    "a criterion this task does not own must not be in its brief"
+
+  rc=0
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-spec-ghost repo --mode no-mistakes \
+    --spec "$spec" --spec-ac 'AC-9' 2>&1) || rc=$?
+  expect_code 1 "$rc" "--spec-ac with an id the spec does not declare"
+  assert_contains "$out" 'AC-9 is not declared' "an undeclared criterion id must be refused, not dropped"
+  assert_absent "$home/data/brief-spec-ghost/brief.md" "a refused selection must not leave a brief behind"
+  pass "fm-brief: --spec-ac selects only that task's criteria and refuses an undeclared id"
+}
+
+test_spec_flag_is_refused_where_it_does_not_apply() {
+  local home out rc
+  home="$TMP_ROOT/spec-refuse-home"
+  mkdir -p "$home/data" "$home/state"
+
+  rc=0
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-spec-scout repo --scout --spec /dev/null 2>&1) || rc=$?
+  expect_code 1 "$rc" "--spec on a scout"
+  assert_contains "$out" 'applies only to ship briefs' "a scout produces the spec, so it cannot be bound to one"
+
+  rc=0
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-spec-orphan repo --mode no-mistakes --spec-ac AC-1 2>&1) || rc=$?
+  expect_code 1 "$rc" "--spec-ac without --spec"
+  assert_contains "$out" 'needs --spec' "criteria cannot be selected without a spec to select them from"
+
+  rc=0
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-spec-missing repo --mode no-mistakes --spec "$TMP_ROOT/nope.md" 2>&1) || rc=$?
+  expect_code 1 "$rc" "--spec pointing at a missing file"
+  assert_contains "$out" 'no spec file at' "a missing spec file is named"
+  pass "fm-brief: --spec is refused on scouts, without a spec, and on a missing file"
+}
+
+test_brief_without_spec_is_unchanged() {
+  local home a b
+  home="$TMP_ROOT/spec-identity-home"
+  mkdir -p "$home/data" "$home/state"
+  a="$TMP_ROOT/identity-a.md"
+  b="$TMP_ROOT/identity-b.md"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-identity repo --mode no-mistakes >/dev/null \
+    || fail "plain ship scaffold exited non-zero"
+  cp "$home/data/brief-identity/brief.md" "$a"
+
+  # The spec machinery must leave no trace at all when it is not used.
+  assert_no_grep 'fm-spec.sh' "$a" "an ordinary brief must not mention the spec enforcement"
+  assert_no_grep 'Acceptance criteria - from the captain-approved spec' "$a" \
+    "an ordinary brief must not carry a spec criteria heading"
+
+  # Same inputs, same bytes, twice: the generator stays deterministic.
+  rm -rf "$home/data/brief-identity"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-identity repo --mode no-mistakes >/dev/null \
+    || fail "plain ship scaffold exited non-zero on the second run"
+  cp "$home/data/brief-identity/brief.md" "$b"
+  cmp -s "$a" "$b" || fail "an ordinary brief is not byte-stable"
+  pass "fm-brief: a brief scaffolded without --spec carries no trace of the spec path"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
@@ -730,3 +890,7 @@ test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
+test_spec_flag_carries_criteria_and_pins_enforcement
+test_spec_ac_selects_the_tasks_own_criteria
+test_spec_flag_is_refused_where_it_does_not_apply
+test_brief_without_spec_is_unchanged

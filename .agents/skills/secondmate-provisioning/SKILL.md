@@ -228,6 +228,10 @@ Each secondmate is a firstmate in its own home, so it runs recovery on startup a
 A secondmate's recovery reconciles only work that is already its own and then idles.
 It never initiates a survey or audit during recovery.
 
+## Context compaction
+
+`bin/fm-secondmate-compact.sh` is the single owner of stowing and then compacting an idle secondmate's conversation context; `AGENTS.md` section 7 owns when firstmate runs it.
+
 ## Retirement and teardown
 
 A secondmate is persistent by default.
