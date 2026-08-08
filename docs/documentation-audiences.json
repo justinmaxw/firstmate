@@ -173,6 +173,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/spec-delivery/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/stow/SKILL.md",
       "audience": "agent-runtime"
     },
@@ -279,6 +283,10 @@
     {
       "path": "docs/sessionstart-nudge.md",
       "audience": "operator-current"
+    },
+    {
+      "path": "docs/spec-workflow.md",
+      "audience": "agent-runtime"
     },
     {
       "path": "docs/subagent-guard.md",

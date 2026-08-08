@@ -6,7 +6,7 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab] [--spec <path> [--spec-ac <ids>]]
 #        fm-brief.sh <task-id> <repo-name> --scout [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
@@ -22,6 +22,18 @@
 #   omitting both still fails loudly so an accidental omission is never silent.
 #   Set FM_SECONDMATE_CHARTER='<charter>' to fill the charter text.
 #   Set FM_SECONDMATE_SCOPE='<scope>' to write a routing scope distinct from the charter text.
+#   --spec <path> marks this ship task as coming from a captain-approved spec
+#   (docs/spec-workflow.md). It copies that task's acceptance criteria from the
+#   spec's section 7 VERBATIM into the brief and pins `bin/fm-spec.sh scope` and
+#   `bin/fm-spec.sh ac` into the definition of done, so the spec becomes the
+#   contract the worker is held to rather than advice it may have read. Without
+#   the flag the generated brief is byte-identical to what it has always been.
+#   --spec-ac <ids> narrows those criteria to the subset this task owns per the
+#   spec's section 12, as a comma- or space-separated list (e.g. "AC-1,AC-3");
+#   omit it when the task owns every criterion. An id the spec does not declare
+#   is refused rather than silently dropped, because a brief missing a criterion
+#   is a worker held to the wrong contract. --spec is refused on scout and
+#   secondmate scaffolds, and --spec-ac without --spec is refused too.
 #   --herdr-lab is mandatory when the task will issue Herdr lifecycle commands.
 #   It adds the hard isolation contract backed by bin/fm-herdr-lab.sh.
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
@@ -106,6 +118,8 @@ HERDR_LAB=0
 NO_PROJECTS=0
 MODE=
 MODE_SET=0
+SPEC=
+SPEC_ACS=
 POS=()
 want_value=
 for a in "$@"; do
@@ -115,6 +129,8 @@ for a in "$@"; do
     esac
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
+      spec) SPEC=$a ;;
+      spec-ac) SPEC_ACS=$a ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -127,6 +143,10 @@ for a in "$@"; do
     --no-projects) NO_PROJECTS=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
+    --spec) want_value=spec ;;
+    --spec=*) SPEC=${a#--spec=} ;;
+    --spec-ac) want_value=spec-ac ;;
+    --spec-ac=*) SPEC_ACS=${a#--spec-ac=} ;;
     # yolo never reaches the worker: it is firstmate's approval authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -152,6 +172,18 @@ if [ "$KIND" = ship ]; then
   esac
 elif [ "$MODE_SET" -eq 1 ]; then
   echo "error: --mode applies only to ship briefs; a scout delivers a report and a secondmate charter is not a delivery contract" >&2
+  exit 1
+fi
+
+# --spec binds a ship task to a captain-approved spec (docs/spec-workflow.md).
+# A scout PRODUCES a spec and a charter is not a delivery contract, so neither
+# can be bound to one.
+if [ -n "$SPEC" ] && [ "$KIND" != ship ]; then
+  echo "error: --spec applies only to ship briefs; a scout's deliverable is the spec itself and a secondmate charter is not a delivery contract" >&2
+  exit 1
+fi
+if [ -n "$SPEC_ACS" ] && [ -z "$SPEC" ]; then
+  echo "error: --spec-ac needs --spec <path>; acceptance criteria are selected from a specific spec" >&2
   exit 1
 fi
 ID=${POS[0]}
@@ -297,6 +329,42 @@ EOF
 HERDR_SECTION=${HERDR_SECTION%$'\n'}
 fi
 
+# A spec-backed ship task carries its criteria in the same slot the Herdr
+# declaration uses, so a brief scaffolded WITHOUT --spec stays byte-identical to
+# what this script has always produced. bin/fm-spec.sh owns spec parsing; this
+# script never grows a second copy of it.
+SPEC_DOD=""
+if [ -n "$SPEC" ]; then
+  [ -f "$SPEC" ] || { echo "error: no spec file at $SPEC" >&2; exit 1; }
+  SPEC_ABS=$(cd "$(dirname "$SPEC")" && printf '%s/%s' "$(pwd -P)" "$(basename "$SPEC")")
+  if [ -n "$SPEC_ACS" ]; then
+    SPEC_CRITERIA=$("$FM_ROOT/bin/fm-spec.sh" criteria "$SPEC_ABS" --only "$SPEC_ACS") || exit 1
+  else
+    SPEC_CRITERIA=$("$FM_ROOT/bin/fm-spec.sh" criteria "$SPEC_ABS") || exit 1
+  fi
+  [ -n "$SPEC_CRITERIA" ] || { echo "error: $SPEC yielded no acceptance criteria for this task" >&2; exit 1; }
+  HERDR_SECTION="$HERDR_SECTION
+
+# Acceptance criteria - from the captain-approved spec
+Spec: \`$SPEC_ABS\`
+These criteria are copied verbatim from that spec's section 7. They are the accepted contract for this task: satisfy every one of them, and treat anything beyond them as out of scope rather than an improvement to make on your own.
+
+$SPEC_CRITERIA
+
+A criterion marked \`manual-check\` still has to be implemented; it is exempt only from the automated mapping check below.
+The spec's sections 3 and 12 are the files you may touch, plus the tests its section 8 already maps and the spec file itself; its section 9 is off-limits and overrides all of that. Both checks below are enforced, not advisory."
+  IFS= read -r -d '' SPEC_DOD <<EOF || true
+
+
+Spec enforcement (this task came from \`$SPEC_ABS\`):
+Before you report done, both of these must pass from the worktree root, and both must be re-run by the validation that follows:
+- \`$FM_ROOT/bin/fm-spec.sh scope $SPEC_ABS\` - every file you changed is inside the spec's allowed set and none is out of scope.
+- \`$FM_ROOT/bin/fm-spec.sh ac $SPEC_ABS\` - every acceptance criterion maps to a test that actually exists.
+A failure here is the task not being finished. Fix the work, not the spec; if the spec itself is wrong, append \`needs-decision: {why the spec is wrong}\` and stop.
+EOF
+  SPEC_DOD=${SPEC_DOD%$'\n'}
+fi
+
 if [ "$KIND" = scout ]; then
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -406,6 +474,7 @@ esac
 # $(...) command substitution used to strip. Drop that one newline so generated
 # briefs stay byte-identical to the historical Bash 5 output.
 DOD=${DOD%$'\n'}
+DOD="$DOD$SPEC_DOD"
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -458,4 +527,8 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 
 $DOD
 EOF
-echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
+if [ -n "$SPEC" ]; then
+  echo "scaffolded: $BRIEF (ship, mode=$MODE, spec=$SPEC_ABS; replace {TASK})"
+else
+  echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
+fi
