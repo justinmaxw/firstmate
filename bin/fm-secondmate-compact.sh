@@ -59,8 +59,10 @@
 #     silently disables transcript saving in some environments (observed with
 #     an inherited nested-session marker), and without this probe an absent
 #     signal would be indistinguishable from a failed compaction.
-#   - only a record NEWER than the moment the command was sent counts, so an
-#     older compaction can never be mistaken for this one.
+#   - a record counts only when it is newer than the moment the command was sent
+#     AND newer than the newest record that already existed before it, so
+#     neither an older compaction nor one written earlier in the same
+#     second-truncated timestamp can be mistaken for this one.
 # Claude answers "Not enough messages to compact." on a short conversation and
 # no record is written; that is reported as an unconfirmed compaction (exit 4)
 # with the pane tail attached, not silently treated as success.
@@ -418,7 +420,13 @@ COMPACT_DEADLINE=$(deadline_from "$COMPACT_TIMEOUT")
 CONFIRMED_TS=
 while :; do
   ts=$(newest_compaction_ts)
-  if [ -n "$ts" ] && [ "$ts" \> "$SEND_TS" ]; then
+  # Two conditions, because either alone is defeatable. Newer than the send
+  # keeps an old compaction from counting; different from the pre-send newest
+  # keeps a record written EARLIER in the same wall-clock second from counting,
+  # which the second-truncated SEND_TS cannot rule out on its own (transcript
+  # timestamps carry milliseconds).
+  if [ -n "$ts" ] && [ "$ts" \> "$SEND_TS" ] \
+    && { [ -z "$BASELINE_TS" ] || [ "$ts" \> "$BASELINE_TS" ]; }; then
     CONFIRMED_TS=$ts
     break
   fi

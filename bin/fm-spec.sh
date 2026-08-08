@@ -20,7 +20,8 @@
 #
 # check   structural validation of a spec, so an incomplete spec fails here
 #         rather than reaching the captain.
-# scope   the branch's changed files against the spec's allowed paths.
+# scope   the branch's changed files against the spec's allowed paths, which
+#         include section 8's mapped tests and the spec file itself.
 # ac      every acceptance criterion against the test the spec claims for it.
 # criteria
 #         prints section 7's criterion lines exactly as the spec writes them, so
@@ -49,12 +50,23 @@
 #                 because "manual-check" with no reason is just an untested
 #                 criterion with a label on it.
 #   Open items    in section 10, every top-level list item must carry `Answer:`
-#                 somewhere in its block. A section 10 whose body is empty or
-#                 `None` passes. Unanswered means not approvable.
+#                 somewhere in its block. Top-level means the bullet starts at
+#                 column 0; an indented sub-bullet is part of its parent item and
+#                 never starts a new one, so a rationale nested under an answered
+#                 question does not reopen it. A section 10 whose body is empty
+#                 or `None` passes. Unanswered means not approvable.
 #   Paths         in sections 3, 9, and 12, a path is a backtick-quoted token:
 #                 `path/to/file`, `path/to/dir/` for a whole subtree, or a glob
 #                 like `src/**/*.ts`. Sections 3 and 12 are the allowed set;
-#                 section 9 is out of scope and wins over both.
+#                 section 9 is out of scope and wins over everything below.
+#                 `scope` also treats two things as already declared, so a spec
+#                 never has to name the same path twice: the test paths section
+#                 8 maps acceptance criteria to, and the spec file itself when
+#                 it lives inside the repo it governs. Requiring those to be
+#                 repeated in section 3 or 12 is bookkeeping authors forget, and
+#                 each forgotten one would be a false escalation - `ac` demanding
+#                 a test file that `scope` then rejects, with no in-scope way out
+#                 for the worker.
 #   Test map      in section 8, a table row whose first cell is an AC id and
 #                 whose second cell is `path/to/test` or `path/to/test::name`.
 #                 Section 8 is not required by LIGHT, but `ac` needs it: a spec
@@ -76,6 +88,12 @@
 set -u
 
 SELF=fm-spec
+
+# A backtick-quoted token. Built rather than written inline so the pattern is a
+# plain string to the shell instead of something that reads like a command
+# substitution.
+FM_SPEC_BACKTICK=$(printf '\140')
+FM_SPEC_BACKTICK_TOKEN_RE="${FM_SPEC_BACKTICK}[^${FM_SPEC_BACKTICK}]*${FM_SPEC_BACKTICK}"
 
 usage() {
   awk '
@@ -171,10 +189,16 @@ ac_is_manual_check() {  # <ac-line>
 }
 
 # Backtick-quoted path tokens in a section.
+#
+# Extracted per line rather than by splitting the whole section on backticks:
+# a newline between two quoted tokens produces two separators, which shifts the
+# even/odd parity a whole-stream split relies on and silently drops every token
+# after the first one that sits on its own line. Silently losing a path here
+# narrows the allowed set and turns into a false out-of-scope failure.
 section_paths() {  # <spec> <section-number>
   section_body "$1" "$2" \
-    | tr '`' '\n' \
-    | awk 'NR % 2 == 0' \
+    | grep -o "$FM_SPEC_BACKTICK_TOKEN_RE" \
+    | tr -d '`' \
     | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
     | grep -v '^$' \
     | LC_ALL=C sort -u
@@ -268,7 +292,7 @@ check_open_questions() {
   esac
   # Each top-level list item must carry an Answer: somewhere in its own block.
   item_lines=$(section_body "$SPEC" 10 | awk '
-    /^[[:space:]]*([-*]|[0-9]+\.)[[:space:]]+/ {
+    /^([-*]|[0-9]+\.)[[:space:]]+/ {
       if (item != "" && answered == 0) print item
       item = $0
       answered = ($0 ~ /Answer:/)
@@ -332,6 +356,32 @@ path_matches() {  # <changed-path> <pattern>
   return 1
 }
 
+# The test paths section 8 already maps acceptance criteria to. `scope` treats
+# these as declared, so a spec never has to name the same path twice.
+section_test_paths() {  # <spec>
+  section_body "$1" 8 \
+    | grep -E '^[[:space:]]*\|[[:space:]]*AC-[0-9]+[[:space:]]*\|' \
+    | awk -F'|' '{ print $3 }' \
+    | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
+    | tr -d '`' \
+    | sed -E 's/::.*$//' \
+    | grep -v '^$' \
+    | LC_ALL=C sort -u
+}
+
+# The spec's own path, relative to this repository, when it lives inside it.
+# A spec written into the repo it governs is not a change the spec forgot to
+# declare; it is the spec.
+spec_path_in_repo() {  # <spec>
+  local root spec_real
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || return 0
+  root=$(cd "$root" 2>/dev/null && pwd -P) || return 0
+  spec_real=$(cd "$(dirname "$1")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$1")") || return 0
+  case "$spec_real" in
+    "$root"/*) printf '%s' "${spec_real#"$root"/}" ;;
+  esac
+}
+
 changed_files() {  # <base-ref>
   local base=$1 merge_base
   git rev-parse --git-dir >/dev/null 2>&1 \
@@ -379,7 +429,17 @@ command_scope() {
   FAILED=0
 
   base=$(resolve_base "$base")
-  allowed=$( { section_paths "$SPEC" 3; section_paths "$SPEC" 12; } | LC_ALL=C sort -u)
+  # Sections 3 and 12 are what the spec declares. Section 8's mapped test paths
+  # and the spec file itself are added because requiring the same path in two
+  # places is bookkeeping people forget, and every forgotten one is a false
+  # escalation for the captain to answer. Section 9 still wins over all of it:
+  # an explicit non-goal is the captain's own boundary.
+  allowed=$( {
+    section_paths "$SPEC" 3
+    section_paths "$SPEC" 12
+    section_test_paths "$SPEC"
+    spec_path_in_repo "$SPEC"
+  } | grep -v '^$' | LC_ALL=C sort -u)
   denied=$(section_paths "$SPEC" 9)
   [ -n "$allowed" ] \
     || die 1 "$SPEC declares no allowed paths in sections 3 or 12, so no change can be in scope"

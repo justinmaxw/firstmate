@@ -352,7 +352,7 @@ These criteria are copied verbatim from that spec's section 7. They are the acce
 $SPEC_CRITERIA
 
 A criterion marked \`manual-check\` still has to be implemented; it is exempt only from the automated mapping check below.
-The spec's sections 3 and 12 are the files you may touch and its section 9 is off-limits. Both are enforced, not advisory."
+The spec's sections 3 and 12 are the files you may touch, plus the tests its section 8 already maps and the spec file itself; its section 9 is off-limits and overrides all of that. Both checks below are enforced, not advisory."
   IFS= read -r -d '' SPEC_DOD <<EOF || true
 
 

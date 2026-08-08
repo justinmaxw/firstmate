@@ -96,6 +96,10 @@ case "$text" in
     case "${FM_FAKE_COMPACT_RESULT:-none}" in
       new) ts=$(date -u -v+1M +%Y-%m-%dT%H:%M:%S.000Z 2>/dev/null || date -u -d '+1 minute' +%Y-%m-%dT%H:%M:%S.000Z) ;;
       old) ts=2020-01-01T00:00:00.000Z ;;
+      # A record written moments BEFORE the send, in the same wall-clock second
+      # the second-truncated send timestamp records. Freshness alone cannot
+      # rule this out.
+      presend) ts=$(date -u +%Y-%m-%dT%H:%M:%S.000Z) ;;
       *) ts= ;;
     esac
     if [ -n "$ts" ]; then
@@ -346,6 +350,21 @@ run_sut
 expect_code 4 "$RC" "stale compaction record"
 [ "$(sent_count)" = 2 ] || fail "stale-record case did not send exactly stow + /compact"
 pass "a compaction record older than the send never counts as confirmation"
+
+# A compaction record that already existed before the command was sent must
+# never confirm it, even when its own timestamp falls inside the same second the
+# send timestamp truncates to. Written into the transcript BEFORE the run, so
+# only the pre-send comparison can reject it.
+new_case
+export FM_FAKE_COMPACT_RESULT=none
+printf '{"type":"user","isCompactSummary":true,"cwd":"%s","timestamp":"%s"}\n' \
+  "$SECOND_REAL" "$(date -u -v+1M +%Y-%m-%dT%H:%M:%S.000Z 2>/dev/null || date -u -d '+1 minute' +%Y-%m-%dT%H:%M:%S.000Z)" \
+  >> "$TRANSCRIPT"
+run_sut
+expect_code 4 "$RC" "a compaction record that predates the send"
+assert_contains "$OUT" 'no compaction was recorded' "a pre-existing record is not confirmation"
+[ "$(sent_count)" = 2 ] || fail "the pre-existing-record case did not send exactly stow + /compact"
+pass "a compaction record that already existed before the send never confirms the new one"
 
 # --- happy path --------------------------------------------------------------
 

@@ -43,7 +43,7 @@ This replaces open-ended idea iteration.
    Single-task feature: promote the scout with `bin/fm-promote.sh`.
    Multi-task: decompose per template section 12.
    Each ship brief's acceptance-criteria block is that task's ACs from the spec, verbatim; `bin/fm-brief.sh --spec` writes them and pins the two enforcement commands into the worker's definition of done.
-   Allowed files per task are the union of spec sections 3 and 12; files in section 9 are off-limits.
+   Allowed files per task are the union of spec sections 3 and 12, plus the tests section 8 already maps and the spec file itself; files in section 9 are off-limits and win over all of it.
 5. **Verify.**
    Every AC gets a test named for it (e.g. `test_ac_3_...`).
    The client's existing suite stays green.
@@ -73,7 +73,8 @@ API: example request/response pairs.
 ## 3. Existing-system touchpoints             [scout]
 Files/modules/services touched, with paths in backticks. Current behavior
 of each. Client conventions that constrain design (framework, patterns,
-test setup, CI commands).
+test setup, CI commands). Tests named in section 8 need not be repeated
+here.
 
 ## 4. Interfaces & contracts                  [scout]
 New/changed signatures, routes, events, schemas - exact and
@@ -119,6 +120,8 @@ The scope and mapping checks here are mechanical, not editorial.
 What it adds is two commands with exit codes:
 
 - `bin/fm-spec.sh scope <spec>` compares the branch's changed files against the union of sections 3 and 12, and against section 9.
+  A test path section 8 already maps to a criterion counts as declared, as does the spec file itself when it lives in the repo it governs, so a spec never has to name the same path twice; `bin/fm-spec.sh`'s header owns that rule.
+  Requiring the repetition would be bookkeeping authors forget, and each forgotten one would be a false escalation: `ac` demanding a test that `scope` then rejects, with no in-scope way out for the worker.
 - `bin/fm-spec.sh ac <spec>` checks that every acceptance criterion maps to a test that actually exists where section 8 says it does.
 
 Both run in the worker before it reports done, and again inside the task's own validation run.

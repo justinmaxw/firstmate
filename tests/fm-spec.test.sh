@@ -124,7 +124,15 @@ sed 's/- Which threshold counts as low? Answer: 20 percent./- Which threshold co
   Answer: 20 percent./' "$GOOD" > "$CONTINUED"
 run check "$CONTINUED"
 expect_code 0 "$RC" "an answer on a continuation line"$'\n'"$OUT"
-pass "check blocks on an unanswered open question and accepts an answered one"
+# A rationale nested under an answered question must not reopen it. Before the
+# fix the indented bullet started a fresh item with no Answer:, so a fully
+# answered section 10 failed here and blocked approval.
+NESTED="$TMP_ROOT/answered-nested.md"
+sed 's/- Which threshold counts as low? Answer: 20 percent./- Which threshold counts as low? Answer: 20 percent.\
+  - Rationale: matches the route sheet./' "$GOOD" > "$NESTED"
+run check "$NESTED"
+expect_code 0 "$RC" "an answered question with a nested sub-bullet"$'\n'"$OUT"
+pass "check blocks on an unanswered open question and accepts an answered one, nested detail included"
 
 # --- check: section 12 referencing a criterion that does not exist -----------
 
@@ -173,6 +181,32 @@ scope_in_repo "$SPEC_IN_REPO" --base main
 expect_code 0 "$RC" "a diff entirely inside the allowed set"$'\n'"$OUT"
 assert_contains "$OUT" 'inside' "a clean diff is reported as in scope"
 
+# The ordering gap that hid the scope/ac conflict: scope used to be exercised
+# only BEFORE the mapped test file existed, so a spec could satisfy `ac` and
+# fail `scope` on the very file `ac` demanded. Create the mapped test now, up
+# front, and keep it present for every scope case below. Section 3 and 12 of
+# the fixture deliberately do NOT list tests/, so this case fails unless
+# section 8's mapped paths are treated as declared.
+printf 'test_ac_1_below_threshold() { :; }\n' > "$REPO/tests/target.test.sh"
+scope_in_repo "$SPEC_IN_REPO" --base main
+expect_code 0 "$RC" "a mapped test file that sections 3 and 12 do not list"$'\n'"$OUT"
+assert_not_contains "$OUT" 'is outside the allowed set' "a test section 8 already maps must not be reported out of scope"
+ac_in_repo_early() {
+  RC=0
+  OUT=$(cd "$REPO" && "$SUT" ac "$@" 2>&1) || RC=$?
+}
+ac_in_repo_early "$SPEC_IN_REPO"
+expect_code 0 "$RC" "ac with the mapped test present"$'\n'"$OUT"
+pass "scope and ac agree on the same tree: a spec that satisfies one cannot trap the worker on the other"
+
+# The spec file itself, when it lives inside the repo it governs, is the spec -
+# not an undeclared change.
+cp "$SPEC_IN_REPO" "$REPO/inrepo-spec.md"
+scope_in_repo "$REPO/inrepo-spec.md" --base main
+expect_code 0 "$RC" "a spec stored inside the repo it governs"$'\n'"$OUT"
+assert_not_contains "$OUT" 'is outside the allowed set' "the spec file must not report itself out of scope"
+rm -f "$REPO/inrepo-spec.md"
+
 printf 'stray\n' > "$REPO/src/unrelated.ts"
 scope_in_repo "$SPEC_IN_REPO" --base main
 expect_code 1 "$RC" "a file outside the allowed set"
@@ -197,6 +231,18 @@ assert_contains "$OUT" 'src/unrelated.ts is outside the allowed set' "a committe
 git -C "$REPO" rm -q "src/unrelated.ts" && git -C "$REPO" commit -qm 'drop stray'
 pass "scope passes a clean diff and fails on both a stray path and a section 9 path"
 
+# Section 9 is the captain's own boundary and still wins over the implicit
+# allowance, so an explicit non-goal cannot be smuggled back in through a
+# section 8 mapping.
+DENIED_TEST="$TMP_ROOT/denied-test-spec.md"
+BT=$(printf '\140')
+sed "s|${BT}src/billing.ts${BT}|${BT}src/billing.ts${BT}\
+${BT}tests/${BT}|" "$SPEC_IN_REPO" > "$DENIED_TEST"
+scope_in_repo "$DENIED_TEST" --base main
+expect_code 1 "$RC" "section 9 excluding a path section 8 maps"
+assert_contains "$OUT" 'tests/target.test.sh is out of scope' "an explicit non-goal still wins over a section 8 mapping"
+pass "section 9 still overrides the paths scope treats as implicitly declared"
+
 # --- ac ----------------------------------------------------------------------
 
 ac_in_repo() {
@@ -204,12 +250,15 @@ ac_in_repo() {
   OUT=$(cd "$REPO" && "$SUT" ac "$@" 2>&1) || RC=$?
 }
 
+# A mapping whose file is absent is still a failure; remove it to prove that,
+# then restore it for the cases that follow.
+mv "$REPO/tests/target.test.sh" "$REPO/tests/target.test.sh.hidden"
 ac_in_repo "$SPEC_IN_REPO"
 expect_code 1 "$RC" "a mapping pointing at a test file that does not exist"
 assert_contains "$OUT" 'AC-1 maps to' "the unmapped criterion is named"
 assert_contains "$OUT" 'does not exist in this tree' "the missing test file is reported"
+mv "$REPO/tests/target.test.sh.hidden" "$REPO/tests/target.test.sh"
 
-printf 'test_ac_1_below_threshold() { :; }\n' > "$REPO/tests/target.test.sh"
 ac_in_repo "$SPEC_IN_REPO"
 expect_code 0 "$RC" "a fully mapped spec"$'\n'"$OUT"
 assert_contains "$OUT" 'maps to a test that exists' "a mapped spec passes"
