@@ -191,6 +191,9 @@ Grok exposes `/compact` (see the grok section's argument-hint incident), but its
 ## Submission acknowledgement hazards
 
 A send or key action reporting success is not proof that the intended action happened.
+A confirmed submit means the target accepted the text, while a positively confirmed swallowed Enter is a distinct non-zero result meaning the steer did not land and must not be treated as delivered.
+An unconfirmed or unknown verdict against a busy worker is a third case: the steer is queued and will deliver, not lost, so inspect the target's steering queue before re-sending and never re-send on that error alone.
+This matches `bin/fm-send.sh`'s contract: it types the line once, retries Enter only, and exits non-zero for an inconclusive send without claiming that the text was swallowed.
 OpenCode can accept and queue an Enter while leaving text visible, Grok can consume Enter in its slash popup without submitting, and Kimi can silently drop a message sent before readiness even though the send returns success.
 The shared symptom is a healthy-looking pane with no work in progress, so each adapter must verify the observable postcondition that is specific to its TUI.
 
