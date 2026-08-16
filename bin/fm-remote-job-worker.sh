@@ -144,7 +144,7 @@ worker_recover_quarantine() { # <account-home>
 }
 
 worker_acquire_lock() {
-  local account_home=$1 attempt=0
+  local account_home=$1 attempt=0 stale_entry
   while [ "$attempt" -lt 150 ]; do
     if (umask 077; mkdir "$WORKER_LOCK") 2>/dev/null; then
       WORKER_LOCK_HELD=1
@@ -162,8 +162,15 @@ worker_acquire_lock() {
       sleep 0.1
       continue
     fi
-    [ ! -L "$WORKER_LOCK/pid" ] && [ ! -L "$WORKER_LOCK/start" ] && [ ! -L "$WORKER_LOCK/command" ] || return 1
-    rm -f -- "$WORKER_LOCK/pid" "$WORKER_LOCK/start" "$WORKER_LOCK/command" || return 1
+    # An owner killed between mktemp and mv leaves .pid.XXXXXX-style litter in
+    # the lock. The evidence that authorizes removing pid/start/command - the
+    # owner is provably gone and stale - covers every regular file it left, and
+    # leaving any behind fails the rmdir below for every future successor.
+    for stale_entry in "$WORKER_LOCK"/* "$WORKER_LOCK"/.[!.]* "$WORKER_LOCK"/..?*; do
+      [ -e "$stale_entry" ] || [ -L "$stale_entry" ] || continue
+      [ -f "$stale_entry" ] && [ ! -L "$stale_entry" ] || return 1
+      rm -f -- "$stale_entry" || return 1
+    done
     rmdir "$WORKER_LOCK" || return 1
   done
   return 1
@@ -292,7 +299,10 @@ worker_stop_active_execution() {
 }
 
 worker_shutdown() {
-  trap - HUP INT TERM
+  # Ignore, not default: a group stop makes the restart supervisor send this
+  # process a redundant TERM, and a default disposition here would kill the
+  # shutdown mid-publish and leave litter in the still-held worker lock.
+  trap '' HUP INT TERM
   worker_publish_quarantine || {
     worker_error "cannot guard worker ownership for shutdown"
     trap worker_shutdown HUP INT TERM

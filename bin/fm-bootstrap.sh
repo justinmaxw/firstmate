@@ -18,6 +18,8 @@
 #                 "BOOTSTRAP_INFO: nudged fm-<id> with '<message>'",
 #                 "SECONDMATE_LIVENESS: secondmate <id>: skipped: <reason>|respawn failed after <cause>: <reason>",
 #                 "SECONDMATE_HANDOFF: secondmate <id>: pending delivery: <n> item(s)",
+#                 "TIDY: <diagnostic>" relayed from the locked tidy sweep
+#                 (bin/fm-tidy.sh's header owns those formats),
 #                 "FMX: X mode on ..." or "FMX: X mode off ...".
 #          When a RUNNING local secondmate worktree is fast-forwarded to
 #          firstmate's own current default-branch commit, that update is a
@@ -79,8 +81,8 @@
 #          refresh relays any completed fm-fleet-sync.sh output before the
 #          aggregate timeout skip line with timeout and elapsed seconds.
 #          Set FM_FLEET_PRUNE=0 to skip branch pruning during that refresh.
-#          Set FM_BOOTSTRAP_DETECT_ONLY=1 to skip the six MUTATING sweeps
-#          (PR-check migration, secondmate_sync, secondmate_liveness_sweep,
+#          Set FM_BOOTSTRAP_DETECT_ONLY=1 to skip the seven MUTATING sweeps
+#          (PR-check migration, tidy, secondmate_sync, secondmate_liveness_sweep,
 #          secondmate_handoff_resume, x_mode_setup, fleet_sync) while still
 #          printing every read-only detect line
 #          above; the TANGLE line switches to advisory-only wording with no
@@ -112,12 +114,17 @@
 #          A relaunch that the liveness sweep performs during an `only` run is
 #          always reported, because a digest composed before that run already
 #          printed the superseded endpoint record.
-#          Set FM_BOOTSTRAP_LOCKED=1 alongside it when the sweeps are skipped
-#          because THIS session already ran them while holding the fleet lock,
-#          rather than because it has no lock at all. The two cases differ in
+#          Set FM_BOOTSTRAP_LOCKED=1 when THIS session verifiably holds the
+#          fleet lock. In a detect-only run - the sweeps skipped because this
+#          session already ran them while locked, rather than because it has
+#          no lock at all - the two cases differ in
 #          exactly one place: repair ownership. A locked session is told to
 #          restore a tangled primary checkout itself, while an unlocked one is
-#          told to leave that work to the lock holder. Unset/0 (the default)
+#          told to leave that work to the lock holder. In a full mutating run
+#          the same flag additionally gates the tidy sweep: bootstrap runs
+#          bin/fm-tidy.sh --quiet only when the caller asserts the lock, so a
+#          bare fm-bootstrap.sh run never prunes operational records out from
+#          under the session that owns them. Unset/0 (the default)
 #          keeps detect-only meaning unlocked, exactly as before.
 #        fm-bootstrap.sh install <tool>...
 #          Install the named tools (only ones the captain approved).
@@ -1232,6 +1239,10 @@ if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
       secondmate_handoff_resume
       fm_timing_record phase handoff-delivery "$__fm_timing_stamp"
     fi
+  fi
+  # Tidy is local but must run only in the session that holds the fleet lock.
+  if local_phase && [ "${FM_BOOTSTRAP_LOCKED:-0}" = 1 ] && [ -x "$FM_ROOT/bin/fm-tidy.sh" ]; then
+    "$FM_ROOT/bin/fm-tidy.sh" --quiet
   fi
   # x_mode_setup writes local Relay artifacts only and never leaves the machine.
   local_phase && x_mode_setup

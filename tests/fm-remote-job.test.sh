@@ -285,6 +285,29 @@ wait "$OTHER_PID" 2>/dev/null || true
 OTHER_PID=
 pass "stale ownership is reclaimed without signaling a reused pid"
 
+# A worker killed between mktemp and mv leaves stray temp files inside a
+# still-held lock; reclamation must clear that litter or no successor can
+# ever pass the rmdir and the worker never reports ready again.
+fm_remote_job_stop_worker_tree "$(cat "$STATE_ROOT/worker.pid")" \
+  || fail "the litter fixture could not stop the running worker tree"
+LITTER_LOCK="$STATE_ROOT/worker.lock"
+mkdir "$LITTER_LOCK" || fail "the litter fixture could not fabricate a dead-owner lock"
+sleep 0.1 &
+LITTER_DEAD_PID=$!
+wait "$LITTER_DEAD_PID" 2>/dev/null || true
+printf '%s\n' "$LITTER_DEAD_PID" > "$LITTER_LOCK/pid"
+printf 'Mon Jan  1 00:00:00 2001\n' > "$LITTER_LOCK/start"
+printf 'fm-remote-job-worker.sh --serve\n' > "$LITTER_LOCK/command"
+printf 'interrupted quarantine publish\n' > "$LITTER_LOCK/.quarantine.litter0"
+printf '%s\n' "$LITTER_DEAD_PID" > "$STATE_ROOT/worker.pid"
+touch "$STATE_ROOT/worker.ready"
+touch -t 200001010000 "$STATE_ROOT/worker.ready" "$LITTER_LOCK"
+fm_remote_job_ensure_worker "$REMOTE_ROOT" "$ACCOUNT_HOME" || fail "$FM_REMOTE_JOB_ERROR"
+assert_absent "$LITTER_LOCK/.quarantine.litter0" "reclamation left dead-owner litter in the worker lock"
+fm_remote_job_worker_identity_matches "$REMOTE_ROOT" "$ACCOUNT_HOME" \
+  || fail "litter reclamation did not start the current worker"
+pass "a dead owner's interrupted-publish litter cannot deadlock the worker lock"
+
 FM_REMOTE_JOB_TIMEOUT=1
 fm_remote_job_stage "$ACCOUNT_HOME" "$REMOTE_ROOT" "$REMOTE_HOME" fm-timeout-job.sh < /dev/null > /dev/null
 JOB_ID=$FM_REMOTE_JOB_ID
