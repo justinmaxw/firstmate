@@ -845,6 +845,38 @@ test_spec_flag_is_refused_where_it_does_not_apply() {
   pass "fm-brief: --spec is refused on scouts, without a spec, and on a missing file"
 }
 
+test_ship_branch_setup_resumes_existing_remote_branch() {
+  local home brief
+  home="$TMP_ROOT/resume-branch-home"
+  mkdir -p "$home/data"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" resume-branch-a1 repo --mode no-mistakes >/dev/null \
+    || fail "resume-branch scaffold exited non-zero"
+  brief="$home/data/resume-branch-a1/brief.md"
+
+  assert_grep 'git ls-remote --exit-code --heads origin "refs/heads/fm/resume-branch-a1"' "$brief" \
+    "ship brief does not detect an existing remote task branch"
+  # shellcheck disable=SC2016 # The expected generated Markdown includes literal backticks.
+  assert_grep 'If it exits 2, this is a first spawn: create your branch with `git checkout -b fm/resume-branch-a1`.' "$brief" \
+    "ship brief changed the first-spawn branch creation path"
+  assert_grep 'git fetch origin "refs/heads/fm/resume-branch-a1:refs/remotes/origin/fm/resume-branch-a1"' "$brief" \
+    "ship brief does not fetch an existing task branch before resuming it"
+  assert_grep 'git checkout -b fm/resume-branch-a1 --track "origin/fm/resume-branch-a1"' "$brief" \
+    "ship brief does not resume the existing task branch"
+  assert_grep 'git rev-parse --verify --quiet "refs/heads/fm/resume-branch-a1"' "$brief" \
+    "ship brief does not check for an already-existing local task branch"
+  # shellcheck disable=SC2016 # The expected generated Markdown includes literal backticks.
+  assert_grep 'normal on relaunch, not a blocker), resume it with `git checkout fm/resume-branch-a1`' "$brief" \
+    "ship brief treats an already-existing local task branch as a blocker"
+  # shellcheck disable=SC2016 # The expected generated Markdown includes literal shell syntax.
+  assert_grep 'confirm `[ "$actual" = "$expected" ]`' "$brief" \
+    "ship brief does not require the resumed head to match the fetched commit"
+  # shellcheck disable=SC2016 # The expected generated Markdown includes literal backticks.
+  assert_grep 'append `blocked: could not resume fm/resume-branch-a1 at its recorded remote commit` to the status file and stop' "$brief" \
+    "ship brief lets a mismatched resumed branch proceed"
+  pass "fm-brief: ship branch setup creates first spawns and safely resumes remote branches"
+}
+
 test_brief_without_spec_is_unchanged() {
   local home a b
   home="$TMP_ROOT/spec-identity-home"
@@ -893,4 +925,5 @@ test_scout_and_secondmate_scaffold
 test_spec_flag_carries_criteria_and_pins_enforcement
 test_spec_ac_selects_the_tasks_own_criteria
 test_spec_flag_is_refused_where_it_does_not_apply
+test_ship_branch_setup_resumes_existing_remote_branch
 test_brief_without_spec_is_unchanged

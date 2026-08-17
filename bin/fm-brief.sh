@@ -53,6 +53,8 @@
 # to launch a ship task whose explicit --mode disagrees, so an adjusted brief and the
 # recorded task metadata cannot drift apart.
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
+# The branch step resumes an existing remote task branch at its fetched commit,
+# with a required head verification, or creates the branch when it is new.
 # --mode is refused on scout and secondmate scaffolds: a scout's deliverable is a
 # report rather than a merge, and a charter is not a delivery contract.
 # There is no --yolo flag here. The worker never owns approval decisions, so yolo is
@@ -493,7 +495,15 @@ You are in a disposable git worktree of $REPO, at a detached HEAD on a clean def
 The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
-1. First action: create your branch: \`git checkout -b fm/$ID\`$SETUP2
+1. First action: determine whether this task already has a remote branch.
+   Run \`git ls-remote --exit-code --heads origin "refs/heads/fm/$ID"\`.
+   - If it exits 2, this is a first spawn: create your branch with \`git checkout -b fm/$ID\`.
+   - If it succeeds, this is a respawn: run \`git fetch origin "refs/heads/fm/$ID:refs/remotes/origin/fm/$ID"\` and set \`expected=\$(git rev-parse --verify "refs/remotes/origin/fm/$ID^{commit}")\`.
+     If the local branch already exists (\`git rev-parse --verify --quiet "refs/heads/fm/$ID"\` succeeds - normal on relaunch, not a blocker), resume it with \`git checkout fm/$ID\`; otherwise resume it with \`git checkout -b fm/$ID --track "origin/fm/$ID"\`.
+     Run \`actual=\$(git rev-parse --verify HEAD)\` and confirm \`[ "\$actual" = "\$expected" ]\`.
+     If fetching, resolving either commit, the checkout, or that comparison fails, append \`blocked: could not resume fm/$ID at its recorded remote commit\` to the status file and stop. Do not proceed from the default branch.
+   - For any other exit status, append \`blocked: could not determine whether remote branch fm/$ID exists\` to the status file and stop.
+$SETUP2
 
 # Rules
 $RULE1
