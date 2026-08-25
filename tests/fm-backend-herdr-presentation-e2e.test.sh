@@ -134,6 +134,12 @@ case "${1:-} ${2:-}" in
   "pane close") mutation=pane-close ;;
   "tab focus") mutation=tab-focus ;;
 esac
+# An abort pane can be removed through the focus-safe pane-death path, which
+# issues no pane.close at all, so the exact-pane absence probe that proves the
+# removal is recorded as its own pane-gone observation. It is a read, never a
+# mutation, so it stays distinct from a real pane-close: the sequence assertion
+# below takes whichever evidence comes first per pane, while the focus
+# assertions keep judging only genuine close mutations.
 if [ "${1:-} ${2:-}" = "pane get" ] && [ -d "$POST_CREATE_ABORT_CONTROL" ]; then
   for task_dir in "$POST_CREATE_ABORT_CONTROL"/abort-*; do
     [ -d "$task_dir" ] || continue
@@ -195,7 +201,7 @@ if [ "$status" -eq 0 ] && [ "${1:-} ${2:-}" = "pane get" ] && [ -d "$POST_CREATE
   done
 fi
 if [ "$status" -ne 0 ] && [ "$abort_pane_probe" -eq 1 ]; then
-  mutation=pane-close
+  mutation=pane-gone
   mutation_target=${3:-}
 elif [ "$abort_pane_probe" -eq 1 ]; then
   mutation=
@@ -864,11 +870,16 @@ grep -F "did not yield an isolated worktree" "$TMP_ROOT/abort-b.err" >/dev/null 
   || fail "post-create abort fixture B did not reach the armed validation failure"
 ABORT_A_PANE=$(cat "$POST_CREATE_ABORT_CONTROL/abort-a/task-pane")
 ABORT_B_PANE=$(cat "$POST_CREATE_ABORT_CONTROL/abort-b/task-pane")
+# Each abort pane is removed exactly once, but the removal is observable in
+# more than one shape: an explicit close plus the follow-up probe that confirms
+# the exact pane is gone, or - on the pane-death path - only that probe. Take
+# the first removal evidence per pane so the sequence reports when each pane
+# went away, which is what serialization under the presentation lock is about.
 ABORT_SEQUENCE=$(sed -n "$((ABORT_FOCUS_START + 1)),\$p" "$FOCUS_AUDIT_LOG" | awk -F '\t' -v a="$ABORT_A_PANE" -v b="$ABORT_B_PANE" '
   $1 == "workspace-create" && $4 ~ /^└ abort-a · p:/ { print "create-a" }
   $1 == "workspace-create" && $4 ~ /^└ abort-b · p:/ { print "create-b" }
-  $1 == "pane-close" && $4 == a { print "close-a" }
-  $1 == "pane-close" && $4 == b { print "close-b" }
+  ($1 == "pane-close" || $1 == "pane-gone") && $4 == a && !removed_a { removed_a = 1; print "close-a" }
+  ($1 == "pane-close" || $1 == "pane-gone") && $4 == b && !removed_b { removed_b = 1; print "close-b" }
 ')
 case "$ABORT_SEQUENCE" in
   $'create-a\nclose-a\ncreate-b\nclose-b'|$'create-b\nclose-b\ncreate-a\nclose-a') ;;
