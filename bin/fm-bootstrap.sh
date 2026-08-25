@@ -91,7 +91,7 @@
 #          the fleet lock, so a second concurrent session never race-mutates
 #          PR-check artifacts, secondmate homes, pending handoff outboxes,
 #          X-mode artifacts, project clones, or repair instructions.
-#          Unset/0 (the default) runs all six sweeps - this flag is purely
+#          Unset/0 (the default) runs all seven sweeps - this flag is purely
 #          additive.
 #          Set FM_BOOTSTRAP_NETWORK to split this run by whether a step talks to
 #          the network, so a session start can print its digest from local reads
