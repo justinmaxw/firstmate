@@ -58,7 +58,7 @@ No ship task starts before the captain says approved.
 Approval of a spec is approval of that spec's acceptance criteria, and nothing wider.
 Redlines go back to the same scout; do not open a second investigation for them.
 
-An unresolved decision surfaced by the spec follows `decision-hold-lifecycle` like any other.
+An unresolved decision surfaced by the spec becomes a task held for the captain and follows `captain-hold-lifecycle` like any other.
 
 ## 4. Build
 
