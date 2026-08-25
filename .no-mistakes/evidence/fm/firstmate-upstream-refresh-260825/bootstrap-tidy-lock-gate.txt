@@ -1,0 +1,55 @@
+===== fork tidy sweep inside the merged upstream bootstrap =====
+
+A firstmate home carrying one live window plus dead operational records:
+    state/.hash-main_fm-dead
+    state/.hash-main_fm-live
+    state/.seen-gone_turn-ended
+    state/live.meta
+    state/pending-replies
+    state/procevent-inbox
+    state/pending-replies/old
+    state/pending-replies/open
+
+$ FM_BOOTSTRAP_LOCKED=1 FM_BOOTSTRAP_NETWORK=skip bin/fm-bootstrap.sh   # what fm-session-start.sh runs while it holds the fleet lock
+MISSING: tmux (install: brew install tmux  # or the platform's package manager)
+MISSING: node (install: brew install node  # or the platform's package manager)
+MISSING: gh (install: brew install gh  # or the platform's package manager)
+MISSING: no-mistakes (install: curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh)
+MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)
+MISSING: chrome-devtools-axi (install: npm install -g chrome-devtools-axi && chrome-devtools-axi setup hooks)
+MISSING: lavish-axi (install: npm install -g lavish-axi && lavish-axi setup hooks)
+MISSING: tasks-axi (install: npm install -g tasks-axi)
+MISSING: quota-axi (install: npm install -g quota-axi)
+MISSING: treehouse (install: curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh)
+BOOTSTRAP_INFO: tidy watcher=2 pending-replies=1 procevent-results=0 reports=0 scratch=0
+  home after the locked run (dead records pruned, live + unresolved kept):
+    state/.hash-main_fm-live
+    state/.pr-check-migration-scan-v1
+    state/.pr-check-migration-v1
+    state/live.meta
+    state/pending-replies
+    state/procevent-inbox
+    state/pending-replies/open
+
+$ FM_BOOTSTRAP_NETWORK=skip bin/fm-bootstrap.sh   # same home, caller does NOT assert the fleet lock
+MISSING: tmux (install: brew install tmux  # or the platform's package manager)
+MISSING: node (install: brew install node  # or the platform's package manager)
+MISSING: gh (install: brew install gh  # or the platform's package manager)
+MISSING: no-mistakes (install: curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh)
+MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)
+MISSING: chrome-devtools-axi (install: npm install -g chrome-devtools-axi && chrome-devtools-axi setup hooks)
+MISSING: lavish-axi (install: npm install -g lavish-axi && lavish-axi setup hooks)
+MISSING: tasks-axi (install: npm install -g tasks-axi)
+MISSING: quota-axi (install: npm install -g quota-axi)
+MISSING: treehouse (install: curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh)
+  home after the unlocked run (nothing pruned - the lock gate holds):
+    state/.hash-main_fm-dead
+    state/.hash-main_fm-live
+    state/.pr-check-migration-scan-v1
+    state/.pr-check-migration-v1
+    state/.seen-gone_turn-ended
+    state/live.meta
+    state/pending-replies
+    state/procevent-inbox
+    state/pending-replies/old
+    state/pending-replies/open

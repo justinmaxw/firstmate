@@ -1,0 +1,82 @@
+
+===== 1. merge provenance (fork main + upstream main, no history replacement) =====
+$ git log --oneline --graph -3
+*   6bab06c Merge remote-tracking branch 'upstream/main' into fm/firstmate-upstream-refresh-260825
+|\  
+| * 6a2cd6c fix(pi): hide branch outcomes tool rows in Calm (#3024)
+| * 85d6c72 fix: safely split supervision wake handling by actor (#2953)
+
+$ git rev-parse HEAD^1 HEAD^2   # first parent = fork main, second = upstream main
+88cdef849ad9b29895c8dc2634a4a5faf56fdc33
+6a2cd6cd2c642c9422bb43dccedbd91103285fb0
+$ git merge-base --is-ancestor 88cdef8 HEAD && echo "fork main 88cdef8 is an ancestor: history preserved"
+fork main 88cdef8 is an ancestor: history preserved
+$ git merge-base --is-ancestor 6a2cd6c HEAD && echo "upstream main 6a2cd6c is an ancestor: upstream fully absorbed"
+upstream main 6a2cd6c is an ancestor: upstream fully absorbed
+$ git status --porcelain   # (empty = nothing uncommitted, no stash/reset residue)
+
+===== 2. fork-local spec workflow (bin/fm-spec.sh) run from the merged tree =====
+$ bin/fm-spec.sh check docs/refill.spec.md
+fm-spec: /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/tmp.1wvGkgHqJ6/specrepo/docs/refill.spec.md passes structural validation (tier FULL)
+exit=0
+
+$ bin/fm-spec.sh criteria docs/refill.spec.md --only AC-1
+AC-1 Given a machine below threshold, when the list renders, then it appears.
+exit=0
+
+# worker edits an out-of-scope file, then scope is run against the spec
+$ bin/fm-spec.sh scope docs/refill.spec.md --base HEAD~1
+fm-spec: src/billing.ts is out of scope: section 9 excludes 'src/billing.ts'
+fm-spec: the branch changes files this spec does not allow (base HEAD~1)
+exit=1
+
+===== 3. fork-local tidy automation (bin/fm-tidy.sh) run from the merged tree =====
+# seeded home: one live window (fm-live) plus dead records (fm-dead, gone) and one unresolved reply
+$ bin/fm-tidy.sh --dry-run
+remove: <FM_HOME>/state/.hash-main_fm-dead
+remove: <FM_HOME>/state/.seen-gone_turn-ended
+remove: <FM_HOME>/state/pending-replies/old
+$ bin/fm-tidy.sh   # real run
+remove: <FM_HOME>/state/.hash-main_fm-dead
+remove: <FM_HOME>/state/.seen-gone_turn-ended
+remove: <FM_HOME>/state/pending-replies/old
+$ ls state/ state/pending-replies/   # live + unresolved records survive, dead ones are gone
+  state/.hash-main_fm-live
+  state/.seen-live_turn-ended
+  state/live.meta
+  state/pending-replies
+  state/procevent-inbox
+  state/pending-replies/open
+
+===== 4. fork-local delivery metrics (bin/fm-metrics.sh) run from the merged tree =====
+$ bin/fm-metrics.sh append --project vending --task-id vending-3 --kind ship --dispatched ... --escalations 2 --escalation-types "decision;merge"
+fm-metrics: recorded vending-3 in /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/tmp.1wvGkgHqJ6/metricshome/data/metrics.csv
+fm-metrics: recorded laminar-7 in /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/tmp.1wvGkgHqJ6/metricshome/data/metrics.csv
+$ cat data/metrics.csv
+date,project,task_id,kind,dispatched,pr_opened,merged,captain_msgs,escalations,escalation_types,rework_48h
+2026-08-20,vending,vending-3,ship,2026-08-20T09:00:00Z,2026-08-20T12:00:00Z,2026-08-20T15:00:00Z,4,2,decision;merge,0
+2026-08-21,laminar,laminar-7,scout,2026-08-21T09:00:00Z,,,1,1,blocker,0
+
+$ bin/fm-metrics.sh summarize
+metrics
+main (/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/tmp.1wvGkgHqJ6/metricshome): tasks=2 median_hours_dispatch_to_merge=6.0 captain_msgs_per_task=2.5 rework_48h=0
+  escalation blocker: 1
+  escalation decision: 1
+  escalation merge: 1
+FLEET TOTAL: tasks=2 median_hours_dispatch_to_merge=6.0 captain_msgs_per_task=2.5 rework_48h=0
+  escalation blocker: 1
+  escalation decision: 1
+  escalation merge: 1
+exit=0
+
+===== 5. captain-private material still ignored by the merged .gitignore =====
+$ git check-ignore -v data/backlog.md state/live.meta config/backend projects/x .no-mistakes/y .env
+.gitignore:3:data/	data/backlog.md
+.gitignore:2:state/	state/live.meta
+.gitignore:13:config/	config/backend
+.gitignore:1:projects/	projects/x
+.gitignore:5:.no-mistakes/	.no-mistakes/y
+.gitignore:12:.env	.env
+exit=0
+$ git ls-files data state config projects .no-mistakes .env | wc -l   # 0 = none of it is tracked
+       0
