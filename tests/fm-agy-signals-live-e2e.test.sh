@@ -81,6 +81,7 @@ export PATH
   || fail "could not start the isolated tmux server"
 "$REAL_TMUX" -L "$SOCKET" new-window -d -t "$SESSION:" -n agy -c "$WORKSPACE" -- \
   env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
+  -u GEMINI_API_KEY \
   AGY_CLI_DISABLE_AUTO_UPDATE=true \
   "$AGY_BIN" --dangerously-skip-permissions --model gemini-3.7-flash --effort low \
   -i 'reply with the exact single word: firstmatelivetest' \
