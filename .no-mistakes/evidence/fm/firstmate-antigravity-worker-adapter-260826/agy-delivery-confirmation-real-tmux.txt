@@ -1,0 +1,51 @@
+agy delivery confirmation - real tmux, real submit core (bin/fm-send.sh)
+repo: /Users/justinmaxw/.no-mistakes/worktrees/cc03fb9c14b5/01M0Y8M9E3560WNTRY175WZYB1  commit: fdaebcd
+tmux: tmux 3.6a on a private socket -L fm-agy-delivery-78885
+------------------------------------------------------------------------
+## The agy pane an operator is steering (idle)
+------------------------------------------------------------------------
+Antigravity CLI 1.1.20   model gemini-3.7-flash   effort medium
+  ⏺ ready
+────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────
+  ? for shortcuts
+
+composer classifier verdict: unknown   <- the disclosed, safe "unknown" (agy bare-rule box collides with the Pi-pair detector)
+busy-state verdict:          idle
+------------------------------------------------------------------------
+## BEFORE the fix: the harness-less busy union without agy's token
+------------------------------------------------------------------------
+
+$ fm-send.sh agylab:agy 'please summarize the failing test'
+error: text not submitted to agylab:agy (delivery unconfirmed; verdict=unknown; tried meta=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//fm-agy-delivery.fHjRy7/home/state/agylab:agy.meta; metadata window/terminal lookup; backend=tmux; endpoint=verified)
+exit 1
+
+pane at that moment - the Enter DID land, a turn is running:
+Antigravity CLI 1.1.20   model gemini-3.7-flash   effort medium
+  > please summarize the failing test
+⠙ Generating...
+────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────
+  esc to cancel
+
+=> the message was delivered, but fm-send told the operator it was NOT submitted
+   and discarded the pending-reply expectation, inviting a duplicate resend.
+------------------------------------------------------------------------
+## AFTER the fix: the shipped union in bin/fm-composer-lib.sh
+------------------------------------------------------------------------
+
+$ fm-send.sh agylab:agy 'please summarize the failing test'
+exit 0
+
+pane at that moment:
+Antigravity CLI 1.1.20   model gemini-3.7-flash   effort medium
+  > please summarize the failing test
+⠙ Generating...
+────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────
+  esc to cancel
+
+=> exit 0: the submit core recognized agy's verified busy footer and confirmed delivery.

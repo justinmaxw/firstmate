@@ -1,0 +1,160 @@
+agy (Antigravity CLI) crewmate/scout adapter - operator transcript
+repo: /Users/justinmaxw/.no-mistakes/worktrees/cc03fb9c14b5/01M0Y8M9E3560WNTRY175WZYB1
+commit: fdaebcd
+agy launch endpoint: fake tmux pane + fake `agy` on PATH (tests/agy-helpers.sh)
+
+------------------------------------------------------------------------
+## 1. Spawning an agy crewmate (defaults): model and effort are pinned
+------------------------------------------------------------------------
+
+$ fm-spawn.sh agy-ev-default-x1 <project> agy --mode no-mistakes --yolo off
+warning: /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//fm-agy-evidence.2BsiRq/ev-default/home/data/agy-ev-default-x1/brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned agy-ev-default-x1 harness=agy kind=ship mode=no-mistakes yolo=off window=firstmate:fm-agy-ev-default-x1 worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//fm-agy-evidence.2BsiRq/ev-default/wt
+
+-- command typed into the worker pane --
+env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u ANTIGRAVITY_AGENT AGY_CLI_DISABLE_AUTO_UPDATE=true env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS '$PATH/agy' --dangerously-skip-permissions --model 'gemini-3.7-flash' --effort 'medium' -i "$('$FIRSTMATE/bin/fm-operational-input.sh' encode launch-brief < '$FM_HOME/data/agy-ev-default-x1/brief.md')"
+
+-- persisted task metadata (state/agy-ev-default-x1.meta) --
+harness=agy
+kind=ship
+model=gemini-3.7-flash
+effort=medium
+
+------------------------------------------------------------------------
+## 2. Reasoning effort: verified low|medium|high pass through, others fold to medium
+------------------------------------------------------------------------
+
+$ fm-spawn.sh agy-ev-effort-low-x1 <project> agy --effort low
+pane argv:  --effort 'low'
+meta says:  effort=low
+
+$ fm-spawn.sh agy-ev-effort-high-x1 <project> agy --effort high
+pane argv:  --effort 'high'
+meta says:  effort=high
+
+$ fm-spawn.sh agy-ev-effort-xhigh-x1 <project> agy --effort xhigh
+pane argv:  --effort 'medium'
+meta says:  effort=medium
+
+------------------------------------------------------------------------
+## 3. AC-2: gemini-3.7-flash is the only accepted model identity
+------------------------------------------------------------------------
+
+$ fm-spawn.sh agy-ev-model-ok-x1 <project> agy --model gemini-3.7-flash
+exit 0 - accepted; pane argv carries --model 'gemini-3.7-flash'
+
+$ fm-spawn.sh agy-ev-model-gemini-3.5-pro-x1 <project> agy --model gemini-3.5-pro
+error: harness=agy only ever launches the literal model 'gemini-3.7-flash'; got 'gemini-3.5-pro'
+exit 1
+
+$ fm-spawn.sh agy-ev-model-gemini-2.5-flash-x1 <project> agy --model gemini-2.5-flash
+error: harness=agy only ever launches the literal model 'gemini-3.7-flash'; got 'gemini-2.5-flash'
+exit 1
+
+$ fm-spawn.sh agy-ev-model-claude-opus-5-x1 <project> agy --model claude-opus-5
+error: harness=agy only ever launches the literal model 'gemini-3.7-flash'; got 'claude-opus-5'
+exit 1
+
+------------------------------------------------------------------------
+## 4. AC-1: credential preflight refuses before any endpoint exists
+------------------------------------------------------------------------
+
+$ fm-spawn.sh agy-ev-no-cred-x1 <project> agy   # ~/.gemini/antigravity-cli/jetski_state.pbtxt missing
+error: agy has no worker-reachable Antigravity credential; '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//fm-agy-evidence.2BsiRq/ev-no-cred/agyhome/.gemini/antigravity-cli/jetski_state.pbtxt' is absent or empty. Sign in once interactively with 'agy' (a captain-performed Google account login) before spawning an agy worker.
+exit 1
+endpoint created?      no - refused before launch
+task metadata written? no - refused before publish
+
+------------------------------------------------------------------------
+## 5. Subscription-only enforcement: three billing vectors refused, fail-closed
+------------------------------------------------------------------------
+
+$ GEMINI_API_KEY=sk-live-SECRET fm-spawn.sh agy-ev-apikey-x1 <project> agy
+error: agy's effective settings would permit API-key/Vertex billing or personal-credit top-ups instead of the Google AI Pro/Ultra subscription this pool exists to use; unset GEMINI_API_KEY and clear modelProvider/useG1Credits in '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//fm-agy-evidence.2BsiRq/ev-apikey/agyhome/.gemini/antigravity-cli/settings.json' before spawning an agy worker.
+exit 1   (secret value leaked into output? no)
+
+$ cat ~/.gemini/antigravity-cli/settings.json  ->  {"modelProvider":"gemini"}
+
+$ fm-spawn.sh agy-ev-provider-x1 <project> agy
+error: agy's effective settings would permit API-key/Vertex billing or personal-credit top-ups instead of the Google AI Pro/Ultra subscription this pool exists to use; unset GEMINI_API_KEY and clear modelProvider/useG1Credits in '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//fm-agy-evidence.2BsiRq/ev-provider/agyhome/.gemini/antigravity-cli/settings.json' before spawning an agy worker.
+exit 1
+
+$ cat ~/.gemini/antigravity-cli/settings.json  ->  {"useG1Credits":true}
+
+$ fm-spawn.sh agy-ev-credits-x1 <project> agy
+error: agy's effective settings would permit API-key/Vertex billing or personal-credit top-ups instead of the Google AI Pro/Ultra subscription this pool exists to use; unset GEMINI_API_KEY and clear modelProvider/useG1Credits in '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//fm-agy-evidence.2BsiRq/ev-credits/agyhome/.gemini/antigravity-cli/settings.json' before spawning an agy worker.
+exit 1
+
+$ cat ~/.gemini/antigravity-cli/settings.json  ->  { this is not json
+
+$ fm-spawn.sh agy-ev-malformed-x1 <project> agy   # fail-closed on an unreadable settings file
+error: agy's effective settings would permit API-key/Vertex billing or personal-credit top-ups instead of the Google AI Pro/Ultra subscription this pool exists to use; unset GEMINI_API_KEY and clear modelProvider/useG1Credits in '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//fm-agy-evidence.2BsiRq/ev-malformed/agyhome/.gemini/antigravity-cli/settings.json' before spawning an agy worker.
+exit 1
+
+$ fm-spawn.sh agy-ev-jqfail-x1 <project> agy   # settings.json readable only through a failing jq
+error: agy's effective settings would permit API-key/Vertex billing or personal-credit top-ups instead of the Google AI Pro/Ultra subscription this pool exists to use; unset GEMINI_API_KEY and clear modelProvider/useG1Credits in '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//fm-agy-evidence.2BsiRq/ev-jqfail/agyhome/.gemini/antigravity-cli/settings.json' before spawning an agy worker.
+exit 1   (fail-closed: an unverifiable settings file is not evidence it is safe)
+
+------------------------------------------------------------------------
+## 6. AC-9: agy is a crewmate/scout adapter only - a secondmate is refused
+------------------------------------------------------------------------
+
+$ fm-spawn.sh agy-ev-secondmate-x1 agy --secondmate
+error: agy is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary supervision protocol. Select a harness verified for secondmates.
+exit 1
+task metadata written? no - refused before publish
+
+------------------------------------------------------------------------
+## 7. Raw launch escape hatch records no model the pane never ran
+------------------------------------------------------------------------
+
+$ fm-spawn.sh agy-ev-raw-x1 <project> "agy --model gemini-3.5-pro -i brief"
+warning: /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//fm-agy-evidence.2BsiRq/ev-raw/home/data/agy-ev-raw-x1/brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned agy-ev-raw-x1 harness=agy kind=ship mode=no-mistakes yolo=off window=firstmate:fm-agy-ev-raw-x1 worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//fm-agy-evidence.2BsiRq/ev-raw/wt
+
+meta model/effort: model=default effort=default 
+(empty/default, not a fabricated gemini-3.7-flash the pane never launched)
+
+------------------------------------------------------------------------
+## 8. Harness identity: a launched pane reports the harness it actually is
+------------------------------------------------------------------------
+
+$ CLAUDECODE=1 ANTIGRAVITY_AGENT=1 fm-spawn.sh agy-ev-detect-x1 <project> agy   # stale markers inherited from the spawning primary
+bin/fm-harness.sh, run inside the launched pane -> agy
+markers the launch strips first: -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u ANTIGRAVITY_AGENT -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS 
+
+$ ANTIGRAVITY_AGENT=1 bin/fm-harness.sh   # agy's own environment marker, standalone
+agy
+
+
+$ ANTIGRAVITY_AGENT=1 fm-spawn.sh agy-ev-detect-codex-x1 <project> codex   # a markerless harness spawned under a stale agy marker
+bin/fm-harness.sh, run inside the launched pane -> codex   (not agy)
+
+------------------------------------------------------------------------
+## 9. Vendor auth probe: presence is evidence, never a live-session claim
+------------------------------------------------------------------------
+
+$ fm-vendor-auth-probe.sh agy   # credential file present
+probe=agy status=indeterminate version=1.1.20 versionVerified=yes
+  (present proves a login happened once, not that the session is still live,
+   so the probe never claims the "authenticated" ground-truth token here)
+
+$ fm-vendor-auth-probe.sh agy   # credential file absent
+probe=agy status=unauthenticated version=1.1.20 versionVerified=yes
+
+$ fm-vendor-auth-probe.sh agy   # Antigravity CLI not installed
+probe=agy status=unavailable version=none versionVerified=none
+
+------------------------------------------------------------------------
+## 10. Delivery confirmation: an agy pane's busy footer is acknowledged
+------------------------------------------------------------------------
+agy idle footer     : "  ? for shortcuts"
+agy busy footer     : "  esc to cancel   Generating..."
+
+fm_busy_lines_match <no harness>   on "  ? for shortcuts"                -> idle
+fm_busy_lines_match <no harness>   on "  esc to cancel   Generating..."  -> BUSY
+fm_busy_lines_match agy            on "  ? for shortcuts"                -> idle
+fm_busy_lines_match agy            on "  esc to cancel   Generating..."  -> BUSY
+
+(the harness-less union is what the tmux/herdr submit cores call, so a typed
+ send to an agy pane is now confirmed delivered instead of reported unsubmitted)

@@ -1,0 +1,22 @@
+Regression red-green check for the three review-round fixes in fdaebcd
+Method: `git archive HEAD` into a temp tree, then swap ONE library back to its
+pre-fix revision (8f208e4) and re-run the same shipped test file unchanged.
+
+------------------------------------------------------------------------
+fix under test: agy busy token added to the harness-less delivery union
+RED   bin/fm-composer-lib.sh @ 8f208e4 (pre-fix)  +  tests/fm-tmux-submit-busy.test.sh
+        not ok - no-harness fallback should recognize agy's busy footer
+GREEN bin/fm-composer-lib.sh @ fdaebcd (shipped)  +  tests/fm-tmux-submit-busy.test.sh
+        (no failures)
+------------------------------------------------------------------------
+fix under test: probe_agy reports indeterminate, not authenticated, from a present credential file
+RED   bin/fm-vendor-auth-probe.sh @ 8f208e4 (pre-fix)  +  tests/fm-vendor-auth-probe.test.sh
+        not ok - a stored credential proves a past login, never a live session, so it must not claim authenticated: expected status=indeterminate, got status=authenticated
+GREEN bin/fm-vendor-auth-probe.sh @ fdaebcd (shipped)  +  tests/fm-vendor-auth-probe.test.sh
+        (no failures)
+------------------------------------------------------------------------
+fix under test: task metadata records the effort the pane actually launched
+RED   bin/fm-spawn.sh @ 8f208e4 (pre-fix)  +  tests/fm-agy-harness.test.sh
+        not ok - agy meta recorded a default effort while the pane launched --effort 'medium'
+GREEN bin/fm-spawn.sh @ fdaebcd (shipped)  +  tests/fm-agy-harness.test.sh
+        (no failures)
