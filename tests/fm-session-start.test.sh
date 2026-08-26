@@ -36,6 +36,14 @@ set -u
 # shellcheck source=tests/wake-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
+# Every case that pins a fake harness clears the markers it knows about through
+# its own `env -u` list; agy's ANTIGRAVITY_AGENT is cleared once here instead,
+# file-scoped, so those sub-invocations inherit it already gone and no future
+# call site has to remember a seventh name. Without it, a suite run from an agy
+# crewmate's own shell tool reports harness=agy everywhere the fake ps says
+# claude.
+unset ANTIGRAVITY_AGENT
+
 SESSION_START="$ROOT/bin/fm-session-start.sh"
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 TMP_ROOT=$(fm_test_tmproot fm-session-start-tests)

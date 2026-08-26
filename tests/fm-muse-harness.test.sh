@@ -14,11 +14,12 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # bin/fm-harness.sh checks verified ENV markers before ancestry. Muse is
-# markerless, so an inherited Cursor/Claude/Pi/Grok marker would outrank the
-# versioned muse-bin ancestor these detection cases launch. Drop the ambient
-# markers so the asserted verdict does not depend on which harness launched
-# the suite.
-unset CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS
+# markerless, so an inherited Cursor/Claude/Pi/Grok/Antigravity marker would
+# outrank the versioned muse-bin ancestor these detection cases launch. Drop
+# the ambient markers so the asserted verdict does not depend on which harness
+# launched the suite - agy included, since an agy crewmate runs this suite
+# through a shell tool that carries ANTIGRAVITY_AGENT=1.
+unset CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS ANTIGRAVITY_AGENT
 
 SPAWN="$ROOT/bin/fm-spawn.sh"
 TEARDOWN="$ROOT/bin/fm-teardown.sh"

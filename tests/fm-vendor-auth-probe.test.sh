@@ -31,6 +31,9 @@ SCRIPT="$ROOT/bin/fm-vendor-auth-probe.sh"
 # A stdin payload the script must never leak into a probed vendor CLI.
 STDIN_SENTINEL='SENTINEL-STDIN-MUST-NOT-REACH-VENDOR-CLI'
 
+# Credential-file content the agy probe must never read, print, or classify on.
+CRED_SENTINEL='SENTINEL-CREDENTIAL-MATERIAL-MUST-NOT-BE-READ'
+
 # --- fake toolchain ---------------------------------------------------------
 #
 # quota-axi is present on PATH and logs every invocation. The script must never
@@ -80,6 +83,25 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/grok"
+
+  # The agy probe runs no discovery subcommand at all: `--version` is its only
+  # agy invocation, and its status comes from the credential-storage fact
+  # docs/verification/dispatch-auth.md records. The fake logs argv and stdin the
+  # same way, so "no subcommand ever runs" is observable rather than asserted in
+  # a comment.
+  cat > "$fakebin/agy" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_FAKE_AGY_LOG"
+if IFS= read -r -t 2 leaked; then
+  printf '%s\n' "$leaked" >> "$FM_FAKE_AGY_STDIN"
+fi
+if [ "${1:-}" = --version ]; then
+  printf '%s\n' "${FM_FAKE_AGY_VERSION:-1.1.20}"
+  exit 0
+fi
+exit 0
+SH
+  chmod +x "$fakebin/agy"
   printf '%s\n' "$fakebin"
 }
 
@@ -90,6 +112,8 @@ RUN_LINE=
 RUN_RC=0
 RUN_GROK_LOG=
 RUN_GROK_STDIN=
+RUN_AGY_LOG=
+RUN_AGY_STDIN=
 RUN_QUOTA_LOG=
 run_probe() {
   local case_name=$1
@@ -101,9 +125,13 @@ run_probe() {
   fakebin=$(make_fakebin "$case_dir")
   RUN_GROK_LOG="$case_dir/grok.log"
   RUN_GROK_STDIN="$case_dir/grok.stdin"
+  RUN_AGY_LOG="$case_dir/agy.log"
+  RUN_AGY_STDIN="$case_dir/agy.stdin"
   RUN_QUOTA_LOG="$case_dir/quota.log"
   : > "$RUN_GROK_LOG"
   : > "$RUN_GROK_STDIN"
+  : > "$RUN_AGY_LOG"
+  : > "$RUN_AGY_STDIN"
   : > "$RUN_QUOTA_LOG"
   local seen_separator=0
   for arg in "$@"; do
@@ -120,6 +148,8 @@ run_probe() {
   out=$(env "PATH=$fakebin:$BASE_PATH" \
     "FM_FAKE_GROK_LOG=$RUN_GROK_LOG" \
     "FM_FAKE_GROK_STDIN=$RUN_GROK_STDIN" \
+    "FM_FAKE_AGY_LOG=$RUN_AGY_LOG" \
+    "FM_FAKE_AGY_STDIN=$RUN_AGY_STDIN" \
     "FM_FAKE_QUOTA_LOG=$RUN_QUOTA_LOG" \
     "${env_pairs[@]+"${env_pairs[@]}"}" \
     "$SCRIPT" "${script_args[@]+"${script_args[@]}"}" \
@@ -279,6 +309,104 @@ test_missing_vendor_cli_is_reported_not_assumed() {
   pass "an absent vendor CLI is reported rather than assumed authenticated"
 }
 
+# --- the agy credential-storage probe ---------------------------------------
+#
+# agy has no bounded, side-effect-free CLI discriminator, so its status comes
+# from whether a stored session exists at the one path
+# docs/verification/dispatch-auth.md records. That fact is asymmetric, and these
+# cases pin the asymmetry: absence really is ground truth (no stored session
+# exists for a worker to reuse), while presence is not (a revoked session leaves
+# the file behind untouched).
+seed_agy_home() {  # <case> <present|empty|absent>
+  local home_dir="$TMP_ROOT/$1/home" cred
+  cred="$home_dir/.gemini/antigravity-cli/jetski_state.pbtxt"
+  mkdir -p "$home_dir/.gemini/antigravity-cli"
+  case "$2" in
+    present) printf '%s\n' "$CRED_SENTINEL" > "$cred"; chmod 600 "$cred" ;;
+    empty) : > "$cred" ;;
+    absent) rm -f "$cred" ;;
+    *) fail "seed_agy_home: unknown credential state '$2'" ;;
+  esac
+  printf '%s\n' "$home_dir"
+}
+
+run_agy_probe() {  # <case> <present|empty|absent> [env pairs...]
+  local case_name=$1 state=$2 home_dir
+  shift 2
+  home_dir=$(seed_agy_home "$case_name" "$state")
+  run_probe "$case_name" agy -- "HOME=$home_dir" "$@"
+}
+
+test_agy_stored_credential_is_not_reported_as_ground_truth() {
+  run_agy_probe agy-present present
+  expect_code 0 "$RUN_RC" "a completed probe prints its fact"
+  assert_field "$RUN_LINE" probe agy "the probe name must be echoed"
+  assert_field "$RUN_LINE" status indeterminate \
+    "a stored credential proves a past login, never a live session, so it must not claim authenticated"
+  assert_field "$RUN_LINE" version 1.1.20 "the probed CLI version must be recorded"
+  assert_field "$RUN_LINE" versionVerified yes "the pinned verified version must be recognized"
+  assert_not_contains "$RUN_LINE" "$CRED_SENTINEL" "the fact line must not echo credential content"
+  assert_not_contains "$RUN_LINE" "jetski" "the fact line must not name a credential path"
+  pass "a present agy credential reports indeterminate, never authenticated"
+}
+
+test_agy_absent_or_empty_credential_is_unauthenticated() {
+  local state
+  for state in absent empty; do
+    run_agy_probe "agy-$state" "$state"
+    expect_code 0 "$RUN_RC" "an $state credential is a fact, not a usage error"
+    assert_field "$RUN_LINE" status unauthenticated \
+      "an $state credential means no stored session a worker could reuse"
+  done
+  pass "an absent or empty agy credential is reported as unauthenticated"
+}
+
+test_agy_probe_runs_no_subcommand_and_reads_no_stdin() {
+  local state line
+  for state in present absent; do
+    run_agy_probe "agy-argv-$state" "$state"
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      [ "$line" = --version ] \
+        || fail "agy-argv-$state: the agy probe must run no subcommand, but ran 'agy $line'"
+    done < "$RUN_AGY_LOG"
+    [ "$(grep -c . "$RUN_AGY_LOG")" -eq 1 ] \
+      || fail "agy-argv-$state: expected exactly one --version call, got: $(tr '\n' '|' < "$RUN_AGY_LOG")"
+    [ ! -s "$RUN_AGY_STDIN" ] \
+      || fail "agy-argv-$state: the probe leaked caller stdin: $(cat "$RUN_AGY_STDIN")"
+    assert_grok_never_ran "agy-argv-$state"
+    assert_quota_never_read "agy-argv-$state"
+  done
+  pass "the agy probe invokes only --version, with stdin closed and no other vendor CLI"
+}
+
+# An absent binary must win over a present credential file: a stored session no
+# local agy can be launched against is not evidence a worker could reach one.
+test_agy_missing_vendor_cli_wins_over_a_present_credential() {
+  local case_dir fakebin home_dir line rc=0
+  case_dir="$TMP_ROOT/agy-absent"
+  mkdir -p "$case_dir"
+  fakebin=$(make_fakebin "$case_dir")
+  rm -f "$fakebin/agy"
+  home_dir=$(seed_agy_home agy-absent present)
+  line=$(env "PATH=$fakebin:$BASE_PATH" \
+    "HOME=$home_dir" \
+    "FM_FAKE_QUOTA_LOG=$case_dir/quota.log" \
+    "$SCRIPT" agy </dev/null 2>/dev/null) || rc=$?
+  expect_code 0 "$rc" "an absent vendor CLI is a fact, not a usage error"
+  assert_field "$line" status unavailable "an absent agy must be reported over a stored credential"
+  assert_field "$line" version none "an absent CLI has no version to report"
+  assert_field "$line" versionVerified none "an absent CLI cannot be version-verified"
+  pass "an absent agy binary is reported rather than read off a leftover credential file"
+}
+
+test_agy_probe_version_change_is_disclosed() {
+  run_agy_probe agy-version-drift present "FM_FAKE_AGY_VERSION=1.2.0"
+  assert_field "$RUN_LINE" version 1.2.0 "the probed CLI version must be recorded"
+  assert_field "$RUN_LINE" versionVerified no "an unverified version must be disclosed"
+  pass "an agy version change is recorded and disclosed for re-verification"
+}
+
 # --- the bounded, non-destructive envelope ----------------------------------
 
 test_hanging_probe_is_bounded_and_reported() {
@@ -373,6 +501,7 @@ test_help_succeeds_and_names_the_registered_probes() {
   out=$("$SCRIPT" --help 2>&1) || rc=$?
   expect_code 0 "$rc" "--help must succeed"
   assert_contains "$out" "grok" "--help must name the registered probes"
+  assert_contains "$out" "agy" "--help must name the registered probes"
   pass "--help succeeds and names the registered probes"
 }
 
@@ -384,6 +513,11 @@ test_authenticated_session_is_reported
 test_unauthenticated_session_is_reported
 test_unrecognized_output_is_indeterminate
 test_missing_vendor_cli_is_reported_not_assumed
+test_agy_stored_credential_is_not_reported_as_ground_truth
+test_agy_absent_or_empty_credential_is_unauthenticated
+test_agy_probe_runs_no_subcommand_and_reads_no_stdin
+test_agy_missing_vendor_cli_wins_over_a_present_credential
+test_agy_probe_version_change_is_disclosed
 test_hanging_probe_is_bounded_and_reported
 test_zero_bound_falls_back_to_a_real_bound
 test_malformed_bound_is_replaced_not_forwarded

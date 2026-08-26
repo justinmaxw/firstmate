@@ -3667,6 +3667,38 @@ test_rendered_busy_state_reads_the_cursor_busy_token() {
   pass "fm_backend_herdr_rendered_busy_state: busy/idle/unknown from the rendered footer, with an unreadable pane never reading idle"
 }
 
+# agy renders the same shape of footer as cursor: an idle `? for shortcuts` that
+# switches to `esc to cancel` for the whole of a running turn (verified live,
+# Antigravity CLI 1.1.20).
+herdr_agy_idle_plain() {
+  printf '%b' ' ────────────────────────────────\n > \n ────────────────────────────────\n  ? for shortcuts                   Gemini 3.7 Flash · medium\n'
+}
+herdr_agy_midturn_plain() {
+  printf '%b' ' ⠹ Generating...\n ────────────────────────────────\n > \n ────────────────────────────────\n  esc to cancel                     Gemini 3.7 Flash · medium\n'
+}
+
+# The submit core reads a pane it has NO recorded harness for, so this path runs
+# on the harness-less union rather than on agy's own row. agy needs that union
+# more than any other adapter: its bare-rule composer box collides with the
+# shared Pi-pair detector, so its composer verdict is permanently `unknown` and
+# the rendered footer is the ONLY signal left to confirm a submitted Enter with.
+# With agy's token missing from the union a mid-turn agy pane read `idle` here,
+# and a send that really landed was reported as never submitted.
+test_rendered_busy_state_reads_the_agy_busy_token() {
+  local dir log resp fb idle_out busy_out
+  dir="$TMP_ROOT/rendered-busy-agy"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  herdr_agy_idle_plain > "$resp/1.out"
+  herdr_agy_midturn_plain > "$resp/2.out"
+  fb=$(make_herdr_fakebin "$dir")
+  idle_out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_rendered_busy_state default:w1:p2' "$ROOT" )
+  busy_out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_rendered_busy_state default:w1:p2' "$ROOT" )
+  [ "$idle_out" = idle ] || fail "an idle agy pane renders '? for shortcuts' and must read idle, got '$idle_out'"
+  [ "$busy_out" = busy ] || fail "a mid-turn agy pane renders 'esc to cancel' and must read busy through the harness-less union, got '$busy_out'"
+  pass "fm_backend_herdr_rendered_busy_state: a mid-turn agy pane reads busy with no recorded harness, so a submitted agy Enter can be confirmed"
+}
+
 test_send_text_submit_confirms_never_idle_native_state_via_footer_transition() {
   local dir log resp fb out enter_count
   dir="$TMP_ROOT/submit-cursor-footer-transition"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -4575,6 +4607,7 @@ test_send_text_submit_idle_native_empty_composer_confirms_delivery
 test_send_text_submit_idle_native_pending_plus_rendered_busy_is_queued
 test_composer_state_cursor_midturn_row_reads_pending
 test_rendered_busy_state_reads_the_cursor_busy_token
+test_rendered_busy_state_reads_the_agy_busy_token
 test_send_text_submit_confirms_never_idle_native_state_via_footer_transition
 test_send_text_submit_never_idle_native_state_keeps_pending_without_a_transition
 test_send_text_submit_confirms_despite_codex_idle_tip_composer
