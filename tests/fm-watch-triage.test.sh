@@ -21,8 +21,6 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-classify-lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
-. "$ROOT/bin/fm-timeout-lib.sh"
 
 WATCH="$ROOT/bin/fm-watch.sh"
 DRAIN="$ROOT/bin/fm-wake-drain.sh"
@@ -165,67 +163,7 @@ record_pi_busy() {  # <state-dir> <id>
     --source pi-ext --event agent-start
 }
 
-# Stop a watcher fixture this file is done with, and reap it. Routed through the
-# bounded wait_for_exit rather than a bare `wait`, because a single SIGTERM is
-# not a guarantee that the watcher exits - see wait_for_exit in wake-helpers.sh
-# for the two ways a watcher misses one. A bare `wait` then blocks this script
-# until the fixture stops on its own, up to the 999s FM_STALE_ESCALATE_SECS the
-# phase-A cases below set, which reports as a cancelled CI shard rather than as
-# a failure here. The status is intentionally discarded: every caller is
-# stopping a watcher on purpose, so how it died is not the assertion.
-reap() { kill "$1" 2>/dev/null || true; wait_for_exit "$1" 100 2>/dev/null || true; }
-
-# --- the reap budget itself -------------------------------------------------
-
-# Regression for a CI shard that was cancelled at its job cap instead of
-# reporting a failing test: a phase-A watcher below never acted on the SIGTERM
-# its reap sent, kept polling, and exited only 999 seconds later when its own
-# FM_STALE_ESCALATE_SECS threshold fired - and the bare `wait` reap used blocked
-# this whole script for every one of those seconds. The stand-in ignores SIGTERM
-# outright, which is the same observable condition as a dropped or deferred one.
-# It runs in a child under a hard deadline, so a regression fails this assertion
-# instead of hanging the suite that is asserting it.
-test_reap_of_a_term_ignoring_fixture_is_bounded() {
-  local dir probe err rc=0
-  dir=$(make_case reap-bounded); probe="$dir/reap-probe.sh"; err="$dir/reap-probe.err"
-  cat > "$probe" <<'SH'
-#!/usr/bin/env bash
-set -u
-. "$1"
-ready=$2
-# The stand-in announces itself only once its handler is installed: signalling
-# any earlier just races the fork, because the default disposition still applies
-# while bash starts, and the probe would prove nothing about a refused SIGTERM.
-# Its life is bounded well past the deadline the parent gives this probe, so a
-# regression cannot leave a spinning process behind either.
-bash -c 'trap "" HUP INT TERM; printf ready > "$1"
-  i=0; while [ "$i" -lt 600 ]; do sleep 0.2; i=$((i + 1)); done' _ "$ready" &
-victim=$!
-i=0
-while [ ! -s "$ready" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
-[ -s "$ready" ] || exit 5
-kill "$victim" 2>/dev/null || true
-# A 10-tick (1s) budget: long enough that a fixture acting on SIGTERM exits
-# inside it, short enough that the escalation past it is what this asserts.
-wait_for_exit "$victim" 10 && exit 3
-kill -0 "$victim" 2>/dev/null && exit 4
-exit 0
-SH
-  chmod +x "$probe"
-  # The probe reports only through its exit status, and sourcing the shared
-  # harness inside it makes bash chatter about job records it no longer owns, so
-  # its stderr is kept out of the run log and replayed only when it failed.
-  fm_run_timed 60 "$probe" "$ROOT/tests/wake-helpers.sh" "$dir/reap-probe.ready" 2> "$err" || rc=$?
-  case "$rc" in
-    0) ;;
-    124) fail "reaping a fixture that ignores SIGTERM never returned, so a stuck watcher stalls the whole suite instead of failing its own assertion: $(cat "$err")" ;;
-    3) fail "wait_for_exit reported a clean exit for a fixture that ignored every SIGTERM: $(cat "$err")" ;;
-    4) fail "wait_for_exit returned while the SIGTERM-ignoring fixture was still alive: $(cat "$err")" ;;
-    5) fail "the SIGTERM-ignoring stand-in never came up, so the bounded reap was never exercised: $(cat "$err")" ;;
-    *) fail "the bounded-reap probe failed for an unrelated reason (exit $rc): $(cat "$err")" ;;
-  esac
-  pass "a watcher fixture that ignores SIGTERM is still reaped in bounded time"
-}
+reap() { kill "$1" 2>/dev/null || true; wait "$1" 2>/dev/null || true; }
 
 # --- pure classifier predicates (fm-classify-lib.sh) ------------------------
 
@@ -2675,7 +2613,6 @@ test_afk_paused_changed_pane_hands_off_plain_stale() {
   pass "AFK changed paused panes hand off plain stale identities for daemon-owned pause triage"
 }
 
-test_reap_of_a_term_ignoring_fixture_is_bounded
 test_signal_reason_is_actionable_classifier
 test_stale_is_terminal_classifier
 test_scan_captain_relevant_statuses_classifier

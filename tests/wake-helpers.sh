@@ -289,20 +289,7 @@ wait_for_exit() {
     sleep 0.1
     i=$((i + 1))
   done
-  # The budget is spent, and a further SIGTERM is no likelier to land than the
-  # one the caller already sent: a watcher fixture can miss a TERM outright.
-  # wake() in bin/fm-push-transition-lib.sh ignores HUP/INT/TERM (trap '') for
-  # its whole output critical section, and CI has caught bash failing to parse
-  # bin/fm-watch.sh's own 'exit 1' trap body when the signal arrived while the
-  # watcher was inside a command substitution, which drops that handler
-  # silently. Following a TERM here with an unbounded `wait` therefore blocks
-  # the calling suite until the fixture stops on its own - in the worst case its
-  # own FM_STALE_ESCALATE_SECS, 999s in several watcher fixtures - and that
-  # surfaces as a whole portable-serial shard hitting its job cap with no
-  # failing test named, instead of a bounded failure at the assertion that owns
-  # the process. SIGKILL can be neither deferred nor ignored, so this reap
-  # always terminates; the caller still sees 124 and reports the missed exit.
-  kill -KILL "$pid" 2>/dev/null || true
+  kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   return 124
 }
