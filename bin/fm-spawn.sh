@@ -109,7 +109,10 @@
 #   CREWMATE/SCOUT only, matching muse, and a --secondmate spawn refuses it.
 #   A non-flag string containing
 #   whitespace is treated as a RAW launch command - the escape hatch for verifying
-#   new adapters. For pi and pi-signed, fm-spawn resolves the selected executable
+#   new adapters. agy refuses that form: a raw command carries none of the
+#   placeholders its credential preflight, model allowlist, and subscription-only
+#   billing refusal are gated on, so pass --harness agy or the bare agy positional
+#   instead. For pi and pi-signed, fm-spawn resolves the selected executable
 #   name from PATH once, probes that concrete path with --help, and launches the
 #   same path. It adds --tui-mode regular only when that help advertises the flag;
 #   a failed or inconclusive probe omits it so older Pi versions remain launchable.
