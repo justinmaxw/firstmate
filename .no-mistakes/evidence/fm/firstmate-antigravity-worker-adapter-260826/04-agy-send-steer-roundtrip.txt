@@ -1,0 +1,42 @@
+Steering a live agy crewmate through the real Firstmate send path
+=================================================================
+
+The other half of the adapter's end-user experience: a captain steer reaches the
+live agy worker, the worker acts on the durable record, and acknowledges it.
+
+--- bin/fm-send.sh <task-id> <steer> ---
+
+$ fm-send.sh agy-e2e-keystrip-a3 "Read src/calc.py in this worktree and reply with
+  exactly one line of the form AGY-E2E-OK <function-name>. Change nothing."
+  => exit 0 (durably recorded; the WATCHER DOWN banner is expected in this
+     sandbox, which runs no watcher, and fm-send prints it as a warning only)
+
+--- what the live agy pane did with it ---
+
+28:> Firstmate instruction waiting: list /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/fm-agy-e2e.nmD2QC/home/state/agy-e2e-keystrip-a3.inbox/*.msg and, in numeric order, read and act on each, then
+29:  mv each handled file to /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/fm-agy-e2e.nmD2QC/home/state/agy-e2e-keystrip-a3.inbox/handled/.
+31:● Bash(ls -la /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/fm-agy-e2e.nmD2QC/home/state/agy-e2e-keystrip-a3.inbox/)
+32:● Read(/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/fm-agy-e2e.nmD2QC/home/state/agy-e2e-keystrip-a3.inbox/001.msg)
+33:● Read(/private/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/fm-agy-e2e.nmD2QC/throot/.treehouse/project-b97619/1/project/src/calc.py)
+34:● Bash(mv /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/fm-agy-e2e.nmD2QC/home/state/agy-e2e-keystrip-a3.inbox/001.msg /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/fm-agy-
+35:e2e.nmD2QC/home/stat...)
+36:● Bash(ls /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/fm-agy-e2e.nmD2QC/home/state/agy-e2e-keystrip-a3.inbox/*.msg 2>/dev/null || echo "None") (ctrl+o to expand)
+38:  AGY-E2E-OK add_numbers
+40:────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+41:>
+42:────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+43:? for shortcuts                                                                                                                                                                Gemini 3.7 Flash · medium
+
+--- persisted steering-inbox state afterwards (the worker's acknowledgement) ---
+
+$ find state/agy-e2e-keystrip-a3.inbox -type f
+  state/agy-e2e-keystrip-a3.inbox/handled/001.msg
+
+$ cat state/agy-e2e-keystrip-a3.inbox/handled/001.msg
+  schema=fm-task-inbox.v1
+  at=2026-08-26T18:58:49Z
+  --
+  Read src/calc.py in this worktree and reply with exactly one line of the form AGY-E2E-OK <function-name>. Change nothing.
+The message moved from <inbox>/001.msg into <inbox>/handled/001.msg, which is how
+a Firstmate worker acknowledges a steer, and the pane answered AGY-E2E-OK add_numbers
+- the correct function name from the worktree's own src/calc.py.

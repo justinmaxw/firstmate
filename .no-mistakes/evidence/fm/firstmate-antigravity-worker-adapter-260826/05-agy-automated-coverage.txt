@@ -1,0 +1,72 @@
+Automated coverage for the agy adapter
+======================================
+
+--- Targeted agy suites (bin/fm-test-run.sh) ---
+
+$ bash bin/fm-test-run.sh tests/fm-agy-harness.test.sh \
+    tests/fm-spawn-agy-credential-preflight.test.sh \
+    tests/fm-spawn-agy-model-allowlist.test.sh
+
+ok - agy is detected through its own process ancestor
+ok - agy is detected through its ANTIGRAVITY_AGENT=1 environment marker
+ok - agy detection does not claim unrelated agy-containing commands
+ok - agy launch clears foreign harness markers before ancestry detection
+ok - agy spawn launches with autonomy, the interactive-prompt flag, and a defaulted model/effort
+ok - agy maps low/medium/high directly and falls unsupported classes back to medium rather than omitting the flag
+ok - a raw agy launch is refused even when the embedded model is the allowlisted literal
+ok - a raw agy launch cannot use an embedded --model to bypass the AC-2 allowlist
+ok - a raw agy launch is refused before AC-1's credential preflight could even run
+ok - a raw agy launch is refused before the subscription-only billing refusal could even run
+ok - AC-9's secondmate refusal still applies to a raw agy launch command
+ok - agy is refused as a secondmate harness
+ok - agy's control-plane lifecycle tables (interrupt, exit, kind support) are correctly registered
+ok - the agy delivery-confirmation regex matches its verified busy footer and not its idle footer
+ok - agy spawn refuses when no credential file is present
+ok - agy spawn refuses when the credential file exists but is empty
+ok - agy spawn accepts a present credential file
+ok - agy spawn refuses when GEMINI_API_KEY is set in the launch environment
+ok - the generated agy launch strips a worker-host GEMINI_API_KEY the caller-side refusal cannot see
+ok - agy spawn refuses when settings.json sets modelProvider
+ok - agy spawn refuses when settings.json sets useG1Credits to true
+ok - agy spawn accepts a settings.json that carries neither refused key
+ok - agy spawn fails closed rather than silently permitting an unparseable settings file
+ok - agy spawn refuses every model other than the literal gemini-3.7-flash
+ok - agy spawn accepts the exact literal allowlisted model
+ok - agy spawn defaults an unset model to the literal gemini-3.7-flash rather than agy's own choice
+ok - agy spawn treats the literal token 'default' the same as an unset model
+FM_TEST_SUMMARY total=3 failed=0 skipped_gate=0 duration_ms=48626
+
+--- Opt-in live drift guard against the REAL installed agy 1.1.20 ---
+    and the captain's own Google AI Pro session (spends real subscription quota)
+
+$ FM_AGY_SIGNALS_LIVE=1 bash tests/fm-agy-signals-live-e2e.test.sh
+
+ok - agy's real busy footer matches the verified delivery-confirmation regex
+ok - agy's real turn completes, clears its busy footer, and echoes the requested reply
+ok - agy's real idle composer classifies as the disclosed, safe 'unknown' rather than a wrong empty/pending verdict
+ok - a real Escape interrupt cleanly cancels the turn and never restores the interrupted prompt into the live composer row
+EXIT=0
+
+--- The family-map fix, shown by the runner's own selection ---
+    (before it, all five agy suites resolved to 'unclassified' and a change to
+     bin/fm-spawn.sh selected none of them)
+
+$ bash bin/fm-test-run.sh --list --changed --base <base-commit>
+  tests/fm-agy-harness.test.sh
+  tests/fm-busy-lib.test.sh
+  tests/fm-vendor-auth-probe.test.sh
+  tests/fm-spawn-agy-credential-preflight.test.sh
+  tests/fm-spawn-agy-model-allowlist.test.sh
+  tests/fm-agy-signals-live-e2e.test.sh
+
+$ bash bin/fm-test-run.sh --check-coverage
+  FM_TEST_COVERAGE ok total=171 parallel=24 serial=135 serial_shards=4 herdr=12
+
+--- Other suites this change touches ---
+
+$ bash bin/fm-test-run.sh tests/fm-busy-lib.test.sh tests/fm-vendor-auth-probe.test.sh \
+    tests/fm-spawn-dispatch-profile.test.sh tests/fm-tmux-submit-busy.test.sh \
+    tests/fm-secondmate-harness.test.sh tests/fm-muse-harness.test.sh \
+    tests/fm-kimi-harness.test.sh tests/fm-session-start.test.sh tests/fm-test-run.test.sh
+
+  FM_TEST_SUMMARY total=9 failed=0 skipped_gate=0 duration_ms=756460

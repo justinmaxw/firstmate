@@ -1,0 +1,50 @@
+GEMINI_API_KEY stripped at the REAL agy child, on a worker host that carries the key
+===================================================================================
+
+This reproduces the exact gap the review round flagged: fm-spawn's caller-side
+refusal reads its OWN process environment, but the pane is created by a long-lived
+tmux/herdr daemon whose environment fm-spawn never saw. Only the 'env -u
+GEMINI_API_KEY' prefix on the launch template can keep the run on the Google AI Pro
+subscription instead of pay-as-you-go API billing.
+
+--- Setup: the long-lived tmux server (the worker host) is started WITH the key ---
+    GEMINI_API_KEY=worker-host-leaked-key tmux -L fm-agy-e2e new-session -d -s firstmate ...
+
+worker-host pane shell sees GEMINI_API_KEY:
+worker-host-leaked-key
+rc=0
+
+fm-spawn caller GEMINI_API_KEY = <unset>
+--- A crewmate pane created exactly as bin/backends/tmux.sh:95 creates one ---
+    tmux new-window -d -P -F '#{window_id}' -t firstmate: -n <name> -c <proj>
+    then, inside that pane:  printenv GEMINI_API_KEY
+
+worker-host-leaked-key
+rc=0
+
+    => the pane fm-spawn launches agy into GENUINELY inherits the leaked key.
+
+--- The caller cannot see it, so the caller-side refusal cannot fire ---
+
+fm-spawn caller GEMINI_API_KEY = <unset>
+
+notice: agy-e2e-keystrip-a3 ships mode=local-only while the standing posture for project is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned agy-e2e-keystrip-a3 harness=agy kind=ship mode=local-only yolo=off window=firstmate:fm-agy-e2e-keystrip-a3 worktree=/private/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/fm-agy-e2e.nmD2QC/throot/.treehouse/project-b97619/1/project
+=== spawn exit=0 ===
+
+--- The REAL agy child that fm-spawn launched into that polluted pane ---
+
+61776 /Users/justinmaxw/.local/bin/agy --dangerously-skip-permissions --model gemini-3.7-flash --effort medium -i M-bM^AM-#FIRSTMATE_OP: v1 launch-brief: # Task agy-e2e-keystrip-a3  [<encoded launch-brief>]
+
+--- Its actual process environment (ps eww -p 61776) ---
+
+AGY_CLI_DISABLE_AUTO_UPDATE=true entries : 1   <- proves this env IS readable
+GEMINI_API_KEY entries                   : 0   <- stripped
+
+RESULT: worker host exports GEMINI_API_KEY, the pane inherits it, fm-spawn never
+sees it, and the launched agy child still has ZERO GEMINI_API_KEY entries.
+
+(Note: the pane's own /bin/zsh env is not readable via ps because macOS SIP
+ protects system binaries - which is why the pane is probed with printenv
+ inside the pane instead. agy itself lives in ~/.local/bin and is readable,
+ as the AGY_CLI_DISABLE_AUTO_UPDATE line above demonstrates.)
