@@ -8,103 +8,11 @@
 # matching the captain-approved spec's test plan (section 8).
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/agy-helpers.sh disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/agy-helpers.sh"
 
-# bin/fm-harness.sh checks verified ENV markers before ancestry. Drop the
-# ambient markers, including agy's own ANTIGRAVITY_AGENT, so the asserted
-# verdict does not depend on which harness launched the suite, and so the
-# ancestry-only detection cases below genuinely exercise ancestry rather than
-# an inherited marker.
-unset CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS ANTIGRAVITY_AGENT
-
-SPAWN="$ROOT/bin/fm-spawn.sh"
-HARNESS="$ROOT/bin/fm-harness.sh"
+HARNESS=$AGY_HARNESS_PROBE
 TMP_ROOT=$(fm_test_tmproot fm-agy-harness)
-
-# --- credential/settings fixtures -------------------------------------------
-
-# agy_home <dir>: an isolated $HOME with a present, non-empty credential file
-# and no settings.json, matching the captain's own clean post-login state
-# (settings.json held only trustedWorkspaces, verified live).
-agy_home_with_credential() {  # <dir>
-  local home=$1
-  mkdir -p "$home/.gemini/antigravity-cli"
-  printf 'opaque-session-state\n' > "$home/.gemini/antigravity-cli/jetski_state.pbtxt"
-  printf '%s\n' "$home"
-}
-
-# --- spawn scaffolding -------------------------------------------------------
-
-make_spawn_fakebin() {
-  local dir=$1 fakebin
-  fakebin=$(fm_fakebin "$dir")
-  cat > "$fakebin/tmux" <<'SH'
-#!/usr/bin/env bash
-set -u
-case "$*" in
-  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
-esac
-case "${1:-}" in
-  display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) exit 0 ;;
-  has-session|new-session|new-window|kill-window) exit 0 ;;
-  send-keys)
-    prev=
-    for arg in "$@"; do
-      if [ "$prev" = -l ]; then
-        printf '%s\n' "$arg" >> "$FM_FAKE_LAUNCH_LOG"
-        if [ "${FM_FAKE_EXECUTE_AGY_LAUNCH:-}" = 1 ]; then
-          case "$arg" in
-            *"$FM_FAKE_AGY_EXECUTABLE"*) (cd "$FM_FAKE_PANE_PATH" && bash -c "$arg") ;;
-          esac
-        fi
-        break
-      fi
-      prev=$arg
-    done
-    exit 0
-    ;;
-esac
-exit 0
-SH
-  chmod +x "$fakebin/tmux"
-  cp "$(command -v bash)" "$fakebin/agy"
-  fm_fake_exit0 "$fakebin" treehouse gh-axi gh
-  printf '%s\n' "$fakebin"
-}
-
-make_spawn_case() {  # <name>
-  local name=$1 case_dir home proj wt fakebin id agyhome
-  case_dir="$TMP_ROOT/$name"
-  home="$case_dir/home"
-  proj="$case_dir/project"
-  wt="$case_dir/wt"
-  agyhome="$case_dir/agyhome"
-  fakebin=$(make_spawn_fakebin "$case_dir/fake")
-  id="agy-$name-x1"
-  mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
-  printf 'brief\n' > "$home/data/$id/brief.md"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
-  touch "$home/state/.last-watcher-beat"
-  agy_home_with_credential "$agyhome" >/dev/null
-  printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$id|$agyhome"
-}
-
-run_agy_spawn() {  # <home> <proj> <wt> <fakebin> <id> <agyhome> [extra args...]
-  local home=$1 proj=$2 wt=$3 fakebin=$4 id=$5 agyhome=$6
-  shift 6
-  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
-    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
-    FM_FAKE_LAUNCH_LOG="$home/launch.log" \
-    FM_FAKE_AGY_EXECUTABLE="$fakebin/agy" \
-    FM_FAKE_EXECUTE_AGY_LAUNCH="${FM_FAKE_EXECUTE_AGY_LAUNCH:-}" \
-    HOME="$agyhome" \
-    PATH="$fakebin:$PATH" \
-    "$SPAWN" "$id" "$proj" agy "$@" 2>&1
-}
 
 # --- detection ----------------------------------------------------------
 
@@ -150,18 +58,26 @@ test_detection_is_anchored() {
   pass "agy detection does not claim unrelated agy-containing commands"
 }
 
+# The generated launch is actually executed here, and the launched process
+# reports what bin/fm-harness.sh makes of it. Asserting only that the spawn
+# exited 0 would pass with every `env -u` deleted from the template, because a
+# worker that misreports its own harness still launches fine.
 test_spawn_clears_inherited_foreign_harness_markers() {
-  local rec case_dir home proj wt fakebin id agyhome out status
-  rec=$(make_spawn_case inherited-markers)
+  local rec case_dir home proj wt fakebin id agyhome result out status
+  rec=$(make_agy_case "$TMP_ROOT" inherited-markers)
   IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
+  result="$case_dir/harness-result"
   out=$(CLAUDECODE=1 PI_CODING_AGENT=true GROK_AGENT=1 FM_PI_HARNESS=pi-signed \
     CURSOR_AGENT=1 CURSOR_INVOKED_AS=cursor-agent \
-    FM_FAKE_EXECUTE_AGY_LAUNCH=1 \
-    run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" --mode no-mistakes --yolo off)
+    FM_FAKE_EXECUTE_AGY_LAUNCH=1 FM_FAKE_HARNESS_RESULT="$result" \
+    run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
   status=$?
   expect_code 0 "$status" "agy spawn from a marked backend should succeed: $out"
+  [ -f "$result" ] || fail "the generated agy launch never executed its harness probe"
+  [ "$(cat "$result")" = agy ] \
+    || fail "agy worker inherited a foreign harness identity: $(cat "$result")"
   pass "agy launch clears foreign harness markers before ancestry detection"
 }
 
@@ -169,11 +85,11 @@ EOF
 
 test_spawn_launch_shape() {
   local rec case_dir home proj wt fakebin id agyhome out status launch
-  rec=$(make_spawn_case launch)
+  rec=$(make_agy_case "$TMP_ROOT" launch)
   IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
-  out=$(run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" --mode no-mistakes --yolo off)
+  out=$(run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
   status=$?
   expect_code 0 "$status" "agy spawn should succeed: $out"
   assert_contains "$out" "spawned $id harness=agy" "agy spawn did not report success"
@@ -205,12 +121,12 @@ test_spawn_maps_effort() {
   for entry in "${cases[@]}"; do
     effort=${entry%%|*}
     expect=${entry#*|}
-    rec=$(make_spawn_case "effort-$effort")
+    rec=$(make_agy_case "$TMP_ROOT" "effort-$effort")
     IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
     run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" \
-      --mode no-mistakes --yolo off --effort "$effort" >/dev/null \
+      --effort "$effort" >/dev/null \
       || fail "agy spawn with effort $effort failed"
     launch=$(cat "$home/launch.log")
     assert_contains "$launch" "$expect" "agy effort $effort did not map to '$expect'"
@@ -220,17 +136,45 @@ EOF
   # unlike every other adapter's "omit an unsupported value" rule, an
   # unsupported class must still fall back to a value agy accepts rather than
   # being omitted outright.
-  rec=$(make_spawn_case effort-xhigh-falls-back)
+  rec=$(make_agy_case "$TMP_ROOT" effort-xhigh-falls-back)
   IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
   run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" \
-    --mode no-mistakes --yolo off --effort xhigh >/dev/null \
+    --effort xhigh >/dev/null \
     || fail "agy spawn with an unsupported effort class failed"
   launch=$(cat "$home/launch.log")
   assert_contains "$launch" "--effort 'medium'" \
     "agy spawn did not fall back an unsupported effort class to medium"
   pass "agy maps low/medium/high directly and falls unsupported classes back to medium rather than omitting the flag"
+}
+
+# The raw launch command is the documented unverified-adapter escape hatch. It
+# carries no __MODELFLAG__ placeholder, so nothing fm-spawn resolves can reach
+# the command that actually runs; defaulting the model there would record a
+# model in task metadata that the pane never launched, which quota accounting
+# would later read as truth.
+test_raw_launch_records_no_fabricated_model() {
+  local rec case_dir home proj wt fakebin id agyhome status
+  rec=$(make_agy_case "$TMP_ROOT" raw-launch)
+  IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
+$rec
+EOF
+  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
+    FM_FAKE_LAUNCH_LOG="$home/launch.log" \
+    HOME="$agyhome" PATH="$fakebin:$PATH" \
+    "$AGY_SPAWN" "$id" "$proj" "agy --model gemini-3.5-pro -i 'raw brief'" \
+    --mode no-mistakes --yolo off >/dev/null 2>&1
+  status=$?
+  expect_code 0 "$status" "a raw agy launch command should spawn"
+  assert_grep "model=default" "$home/state/$id.meta" \
+    "a raw agy launch recorded a model fm-spawn never placed in the launch command"
+  assert_contains "$(cat "$home/launch.log")" "--model gemini-3.5-pro" \
+    "a raw agy launch did not run the command it was handed"
+  pass "a raw agy launch records no fabricated model"
 }
 
 # --- secondmate refusal (AC-9) ------------------------------------------
@@ -242,17 +186,18 @@ test_secondmate_spawn_refused() {
   case_dir="$TMP_ROOT/secondmate"
   home="$case_dir/home"
   agyhome="$case_dir/agyhome"
-  fakebin=$(make_spawn_fakebin "$case_dir/fake")
+  fakebin=$(make_agy_fakebin "$case_dir/fake")
   id="agy-secondmate-x1"
-  mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
+  mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" \
+    "$agyhome/$(dirname "$AGY_CREDENTIAL_RELPATH")"
   printf 'charter\n' > "$home/data/$id/brief.md"
-  agy_home_with_credential "$agyhome" >/dev/null
+  agy_seed_credential "$agyhome"
   out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" HOME="$agyhome" \
     PATH="$fakebin:$PATH" \
-    "$SPAWN" "$id" agy --secondmate 2>&1)
+    "$AGY_SPAWN" "$id" agy --secondmate 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "agy was accepted as a secondmate harness"
   assert_contains "$out" "crewmate/scout adapter only" "agy secondmate refusal did not explain the boundary"
@@ -307,6 +252,7 @@ test_detection_is_anchored
 test_spawn_clears_inherited_foreign_harness_markers
 test_spawn_launch_shape
 test_spawn_maps_effort
+test_raw_launch_records_no_fabricated_model
 test_secondmate_spawn_refused
 test_control_lib_lifecycle_tables
 test_delivery_regex_matches_agy_busy_footer

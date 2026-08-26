@@ -54,10 +54,11 @@ set -u
 # controlled, but bin/fm-harness.sh checks verified ENV markers before ancestry.
 # A suite run from inside one of those harnesses inherits its marker, and the
 # highest-precedence one wins over everything these cases set up: with an
-# ambient CLAUDECODE=1, the pi-signed ancestry case resolves "claude". Drop the
-# ambient markers so what this suite asserts does not depend on which harness it
-# was launched from; every case states the marker it means to test.
-unset CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS
+# ambient CLAUDECODE=1, the pi-signed ancestry case resolves "claude", and with
+# an ambient ANTIGRAVITY_AGENT=1 it resolves "agy". Drop the ambient markers so
+# what this suite asserts does not depend on which harness it was launched from;
+# every case states the marker it means to test.
+unset CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS ANTIGRAVITY_AGENT
 
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 fm_git_identity fmtest fmtest@example.com

@@ -7,76 +7,10 @@
 # the Google AI Pro/Ultra subscription this pool exists to use.
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/agy-helpers.sh disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/agy-helpers.sh"
 
-unset CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS
-
-SPAWN="$ROOT/bin/fm-spawn.sh"
 TMP_ROOT=$(fm_test_tmproot fm-spawn-agy-credential-preflight)
-
-make_fakebin() {
-  local dir=$1 fakebin
-  fakebin=$(fm_fakebin "$dir")
-  cat > "$fakebin/tmux" <<'SH'
-#!/usr/bin/env bash
-set -u
-case "$*" in
-  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
-esac
-case "${1:-}" in
-  display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) exit 0 ;;
-  has-session|new-session|new-window|kill-window) exit 0 ;;
-  send-keys)
-    prev=
-    for arg in "$@"; do
-      if [ "$prev" = -l ]; then
-        printf '%s\n' "$arg" >> "$FM_FAKE_LAUNCH_LOG"
-        break
-      fi
-      prev=$arg
-    done
-    exit 0
-    ;;
-esac
-exit 0
-SH
-  chmod +x "$fakebin/tmux"
-  cp "$(command -v bash)" "$fakebin/agy"
-  fm_fake_exit0 "$fakebin" treehouse gh-axi gh
-  printf '%s\n' "$fakebin"
-}
-
-make_case() {  # <name>
-  local name=$1 case_dir home proj wt fakebin id agyhome
-  case_dir="$TMP_ROOT/$name"
-  home="$case_dir/home"
-  proj="$case_dir/project"
-  wt="$case_dir/wt"
-  agyhome="$case_dir/agyhome"
-  fakebin=$(make_fakebin "$case_dir/fake")
-  id="agy-$name-x1"
-  mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" \
-    "$agyhome/.gemini/antigravity-cli"
-  printf 'brief\n' > "$home/data/$id/brief.md"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
-  touch "$home/state/.last-watcher-beat"
-  printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$id|$agyhome"
-}
-
-run_spawn() {  # <home> <proj> <wt> <fakebin> <id> <agyhome> [env=val...] -- [extra args...]
-  local home=$1 proj=$2 wt=$3 fakebin=$4 id=$5 agyhome=$6
-  shift 6
-  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
-    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
-    FM_FAKE_LAUNCH_LOG="$home/launch.log" \
-    HOME="$agyhome" \
-    PATH="$fakebin:$PATH" \
-    "$SPAWN" "$id" "$proj" agy --mode no-mistakes --yolo off "$@" 2>&1
-}
 
 # An unauthenticated agy pane does not exit: it sits on a browser sign-in flow
 # waiting for a human who is not there, which supervision would read as a
@@ -84,11 +18,11 @@ run_spawn() {  # <home> <proj> <wt> <fakebin> <id> <agyhome> [env=val...] -- [ex
 # an endpoint exists.
 test_refuses_without_credential_file() {
   local rec case_dir home proj wt fakebin id agyhome out status
-  rec=$(make_case no-cred)
+  rec=$(make_agy_case "$TMP_ROOT" no-cred absent)
   IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
-  out=$(run_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
+  out=$(run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
   status=$?
   [ "$status" -ne 0 ] || fail "agy spawn succeeded with no credential file present"
   assert_contains "$out" "no worker-reachable Antigravity credential" \
@@ -100,12 +34,12 @@ EOF
 
 test_refuses_empty_credential_file() {
   local rec case_dir home proj wt fakebin id agyhome out status
-  rec=$(make_case empty-cred)
+  rec=$(make_agy_case "$TMP_ROOT" empty-cred)
   IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
-  : > "$agyhome/.gemini/antigravity-cli/jetski_state.pbtxt"
-  out=$(run_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
+  : > "$(agy_credential_path "$agyhome")"
+  out=$(run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
   status=$?
   [ "$status" -ne 0 ] || fail "agy spawn succeeded with an empty credential file"
   assert_contains "$out" "no worker-reachable Antigravity credential" \
@@ -115,12 +49,11 @@ EOF
 
 test_accepts_present_credential() {
   local rec case_dir home proj wt fakebin id agyhome status
-  rec=$(make_case present-cred)
+  rec=$(make_agy_case "$TMP_ROOT" present-cred)
   IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
-  printf 'opaque-session-state\n' > "$agyhome/.gemini/antigravity-cli/jetski_state.pbtxt"
-  run_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" >/dev/null
+  run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" >/dev/null
   status=$?
   expect_code 0 "$status" "agy spawn should accept a present, non-empty credential file"
   pass "agy spawn accepts a present credential file"
@@ -128,12 +61,11 @@ EOF
 
 test_refuses_gemini_api_key_env() {
   local rec case_dir home proj wt fakebin id agyhome out status
-  rec=$(make_case api-key-env)
+  rec=$(make_agy_case "$TMP_ROOT" api-key-env)
   IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
-  printf 'opaque-session-state\n' > "$agyhome/.gemini/antigravity-cli/jetski_state.pbtxt"
-  out=$(GEMINI_API_KEY=leaked-key run_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
+  out=$(GEMINI_API_KEY=leaked-key run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
   status=$?
   [ "$status" -ne 0 ] || fail "agy spawn succeeded with GEMINI_API_KEY set"
   assert_contains "$out" "API-key/Vertex billing" \
@@ -145,13 +77,12 @@ EOF
 
 test_refuses_settings_model_provider() {
   local rec case_dir home proj wt fakebin id agyhome out status
-  rec=$(make_case settings-provider)
+  rec=$(make_agy_case "$TMP_ROOT" settings-provider)
   IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
-  printf 'opaque-session-state\n' > "$agyhome/.gemini/antigravity-cli/jetski_state.pbtxt"
-  printf '{"modelProvider":"gemini"}\n' > "$agyhome/.gemini/antigravity-cli/settings.json"
-  out=$(run_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
+  printf '{"modelProvider":"gemini"}\n' > "$(agy_settings_path "$agyhome")"
+  out=$(run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
   status=$?
   [ "$status" -ne 0 ] || fail "agy spawn succeeded with a settings.json modelProvider set"
   assert_contains "$out" "API-key/Vertex billing" \
@@ -161,13 +92,12 @@ EOF
 
 test_refuses_use_g1_credits() {
   local rec case_dir home proj wt fakebin id agyhome out status
-  rec=$(make_case g1-credits)
+  rec=$(make_agy_case "$TMP_ROOT" g1-credits)
   IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
-  printf 'opaque-session-state\n' > "$agyhome/.gemini/antigravity-cli/jetski_state.pbtxt"
-  printf '{"useG1Credits":true}\n' > "$agyhome/.gemini/antigravity-cli/settings.json"
-  out=$(run_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
+  printf '{"useG1Credits":true}\n' > "$(agy_settings_path "$agyhome")"
+  out=$(run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
   status=$?
   [ "$status" -ne 0 ] || fail "agy spawn succeeded with useG1Credits=true"
   assert_contains "$out" "personal-credit top-ups" \
@@ -177,13 +107,12 @@ EOF
 
 test_accepts_clean_settings_file() {
   local rec case_dir home proj wt fakebin id agyhome status
-  rec=$(make_case clean-settings)
+  rec=$(make_agy_case "$TMP_ROOT" clean-settings)
   IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
-  printf 'opaque-session-state\n' > "$agyhome/.gemini/antigravity-cli/jetski_state.pbtxt"
-  printf '{"trustedWorkspaces":["/some/path"]}\n' > "$agyhome/.gemini/antigravity-cli/settings.json"
-  run_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" >/dev/null
+  printf '{"trustedWorkspaces":["/some/path"]}\n' > "$(agy_settings_path "$agyhome")"
+  run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" >/dev/null
   status=$?
   expect_code 0 "$status" "agy spawn should accept a settings.json with neither modelProvider nor useG1Credits true"
   pass "agy spawn accepts a settings.json that carries neither refused key"
@@ -191,13 +120,12 @@ EOF
 
 test_refuses_unreadable_settings_file() {
   local rec case_dir home proj wt fakebin id agyhome out status
-  rec=$(make_case malformed-settings)
+  rec=$(make_agy_case "$TMP_ROOT" malformed-settings)
   IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
 $rec
 EOF
-  printf 'opaque-session-state\n' > "$agyhome/.gemini/antigravity-cli/jetski_state.pbtxt"
-  printf 'not valid json{{{\n' > "$agyhome/.gemini/antigravity-cli/settings.json"
-  out=$(run_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
+  printf 'not valid json{{{\n' > "$(agy_settings_path "$agyhome")"
+  out=$(run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
   status=$?
   [ "$status" -ne 0 ] || fail "agy spawn succeeded against a malformed settings.json instead of failing closed"
   assert_contains "$out" "API-key/Vertex billing" \

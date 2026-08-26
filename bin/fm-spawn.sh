@@ -1228,9 +1228,16 @@ launch_template() {
   esac
 }
 
+# A raw launch command carries no __MODELFLAG__ placeholder, so nothing an
+# adapter resolves here can reach the command that actually runs. Adapters that
+# default a model must therefore leave MODEL alone on this path, or task
+# metadata would record a model the pane never launched.
+RAW_LAUNCH=0
+
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     LAUNCH=$ARG3
+    RAW_LAUNCH=1
     HARNESS=""
     for word in $LAUNCH; do
       case "$word" in [A-Za-z_]*=*) continue ;; *) HARNESS=$(basename "$word"); break ;; esac
@@ -1292,9 +1299,12 @@ case "$HARNESS" in
     # falling through to whatever agy would pick on its own; anything else
     # refuses the launch outright. This is enforced here, in the launch path
     # itself, so a hand-typed --model override or a stale dispatch profile can
-    # never bypass it.
+    # never bypass it. The default is applied only when this adapter's own
+    # template is what launches: a raw launch command spells its own model out
+    # and never receives __MODELFLAG__, so defaulting there would record a
+    # model in task metadata that the pane never ran.
     if [ -z "$MODEL" ] || [ "$MODEL" = default ]; then
-      MODEL=gemini-3.7-flash
+      [ "$RAW_LAUNCH" -eq 1 ] || MODEL=gemini-3.7-flash
     elif [ "$MODEL" != gemini-3.7-flash ]; then
       echo "error: harness=agy only ever launches the literal model 'gemini-3.7-flash'; got '$MODEL'" >&2
       exit 1
@@ -2894,7 +2904,7 @@ esac
 LAUNCH=${LAUNCH//__WORKTREE__/$sq_worktree}
 case "$HARNESS" in
   claude|codex|opencode|pi|pi-signed|grok|kimi|muse|agy)
-    LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS $LAUNCH"
+    LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u ANTIGRAVITY_AGENT $LAUNCH"
     ;;
 esac
 # Crewmate panes are created by a long-lived tmux/herdr daemon that does not
