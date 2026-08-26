@@ -1,0 +1,16 @@
+=== BEFORE (bin/fm-test-run.sh at 72d7fef): the agy live drift guard was unclassified ===
+$ bin/fm-test-run.sh tests/fm-agy-signals-live-e2e.test.sh
+FM_TEST_BEGIN 2026-08-26T07:57:26Z tests/fm-agy-signals-live-e2e.test.sh family=unclassified expected_gate_skip=none
+FM_TEST_END 2026-08-26T07:57:26Z tests/fm-agy-signals-live-e2e.test.sh exit=0 duration_ms=39 gate_skip=true
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=1 duration_ms=106
+$ bin/fm-test-run.sh --list --family live-harness-optin | grep -c agy
+0
+
+=== AFTER (bin/fm-test-run.sh at f9a0602): it joins the live-harness-optin family ===
+$ bin/fm-test-run.sh tests/fm-agy-signals-live-e2e.test.sh
+FM_TEST_BEGIN 2026-08-26T07:57:27Z tests/fm-agy-signals-live-e2e.test.sh family=live-harness-optin expected_gate_skip=optin-env
+skip: set FM_AGY_SIGNALS_LIVE=1 to run the real Antigravity CLI signal drift guard (spends real subscription quota)
+FM_TEST_END 2026-08-26T07:57:27Z tests/fm-agy-signals-live-e2e.test.sh exit=0 duration_ms=37 gate_skip=true
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=1 duration_ms=101
+$ bin/fm-test-run.sh --list --family live-harness-optin | grep agy
+tests/fm-agy-signals-live-e2e.test.sh

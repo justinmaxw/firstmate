@@ -1,0 +1,25 @@
+=== bin/fm-vendor-auth-probe.sh agy - real Antigravity CLI, real captain HOME ===
+
+$ bin/fm-vendor-auth-probe.sh agy
+probe=agy status=indeterminate version=1.1.20 versionVerified=yes
+  exit status: 0
+  (a login-persisted credential file IS present in this HOME, and the probe still
+   reports 'indeterminate' rather than 'authenticated' - file presence is not liveness)
+
+=== same probe against a HOME with no persisted agy session ===
+$ HOME=<empty-home> bin/fm-vendor-auth-probe.sh agy
+probe=agy status=unauthenticated version=1.1.20 versionVerified=yes
+  exit status: 0
+
+=== the status vocabulary the caller is held to (bin/fm-vendor-auth-probe.sh --help) ===
+status is evidence, never eligibility:
+  authenticated    the vendor CLI reports an authenticated session
+  unauthenticated  the vendor CLI reports no authenticated session
+  indeterminate    output the verified discriminators do not cover
+  timeout          the hard bound was hit
+  unavailable      the vendor CLI is not on PATH
+Only authenticated and unauthenticated are ground truth; the other three
+establish nothing and must never be read as either outcome.
+
+$ agy --version   # the real vendor CLI this ran against
+1.1.20

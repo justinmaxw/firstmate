@@ -1,0 +1,32 @@
+
+############ BEFORE the fix (bin/fm-spawn.sh at 0c6cb9f) ############
+
+$  bin/fm-spawn.sh agy-raw-disallowed-model-x1 <project> "agy --model gemini-3.5-pro -i 'raw brief'" --mode no-mistakes --yolo off
+  warning: /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-before-after.mt7BUF/raw-disallowed-model/home/data/agy-raw-disallowed-model-x1/brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+  spawned agy-raw-disallowed-model-x1 harness=agy kind=ship mode=no-mistakes yolo=off window=firstmate:fm-agy-raw-disallowed-model-x1 worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-before-after.mt7BUF/raw-disallowed-model/wt
+  exit status: 0
+  model recorded in state/agy-raw-disallowed-model-x1.meta: default
+  command typed into the pane: env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u ANTIGRAVITY_AGENT agy --model gemini-3.5-pro -i 'raw brief'
+
+$ GEMINI_API_KEY=leaked-key bin/fm-spawn.sh agy-raw-billing-x1 <project> "agy --model gemini-3.7-flash --effort medium -i 'raw brief'" --mode no-mistakes --yolo off
+  warning: /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-before-after.mt7BUF/raw-billing/home/data/agy-raw-billing-x1/brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+  spawned agy-raw-billing-x1 harness=agy kind=ship mode=no-mistakes yolo=off window=firstmate:fm-agy-raw-billing-x1 worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-before-after.mt7BUF/raw-billing/wt
+  exit status: 0
+  model recorded in state/agy-raw-billing-x1.meta: default
+  command typed into the pane: env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u ANTIGRAVITY_AGENT agy --model gemini-3.7-flash --effort medium -i 'raw brief'
+
+
+############ AFTER the fix (bin/fm-spawn.sh at f9a0602) ############
+
+$  bin/fm-spawn.sh agy-raw-disallowed-model-x1 <project> "agy --model gemini-3.5-pro -i 'raw brief'" --mode no-mistakes --yolo off
+  error: a raw launch command is refused for harness=agy; it would bypass the verified adapter's credential preflight, model allowlist, and subscription-only billing refusal. Pass --harness agy (or the bare 'agy' positional) to use the verified template.
+  exit status: 1
+  model recorded in state/agy-raw-disallowed-model-x1.meta: 
+  command typed into the pane: (none - no endpoint was created)
+
+$ GEMINI_API_KEY=leaked-key bin/fm-spawn.sh agy-raw-billing-x1 <project> "agy --model gemini-3.7-flash --effort medium -i 'raw brief'" --mode no-mistakes --yolo off
+  error: a raw launch command is refused for harness=agy; it would bypass the verified adapter's credential preflight, model allowlist, and subscription-only billing refusal. Pass --harness agy (or the bare 'agy' positional) to use the verified template.
+  exit status: 1
+  model recorded in state/agy-raw-billing-x1.meta: 
+  command typed into the pane: (none - no endpoint was created)
+

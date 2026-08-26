@@ -1,22 +1,54 @@
-Regression red-green check for the three review-round fixes in fdaebcd
-Method: `git archive HEAD` into a temp tree, then swap ONE library back to its
-pre-fix revision (8f208e4) and re-run the same shipped test file unchanged.
+=== PRE-FIX bin/fm-spawn.sh (0c6cb9f, parent of the raw-launch refusal) vs the CURRENT tests ===
 
-------------------------------------------------------------------------
-fix under test: agy busy token added to the harness-less delivery union
-RED   bin/fm-composer-lib.sh @ 8f208e4 (pre-fix)  +  tests/fm-tmux-submit-busy.test.sh
-        not ok - no-harness fallback should recognize agy's busy footer
-GREEN bin/fm-composer-lib.sh @ fdaebcd (shipped)  +  tests/fm-tmux-submit-busy.test.sh
-        (no failures)
-------------------------------------------------------------------------
-fix under test: probe_agy reports indeterminate, not authenticated, from a present credential file
-RED   bin/fm-vendor-auth-probe.sh @ 8f208e4 (pre-fix)  +  tests/fm-vendor-auth-probe.test.sh
-        not ok - a stored credential proves a past login, never a live session, so it must not claim authenticated: expected status=indeterminate, got status=authenticated
-GREEN bin/fm-vendor-auth-probe.sh @ fdaebcd (shipped)  +  tests/fm-vendor-auth-probe.test.sh
-        (no failures)
-------------------------------------------------------------------------
-fix under test: task metadata records the effort the pane actually launched
-RED   bin/fm-spawn.sh @ 8f208e4 (pre-fix)  +  tests/fm-agy-harness.test.sh
-        not ok - agy meta recorded a default effort while the pane launched --effort 'medium'
-GREEN bin/fm-spawn.sh @ fdaebcd (shipped)  +  tests/fm-agy-harness.test.sh
-        (no failures)
+--- tests/fm-agy-harness.test.sh ---
+ok - agy is detected through its own process ancestor
+ok - agy is detected through its ANTIGRAVITY_AGENT=1 environment marker
+ok - agy detection does not claim unrelated agy-containing commands
+ok - agy launch clears foreign harness markers before ancestry detection
+ok - agy spawn launches with autonomy, the interactive-prompt flag, and a defaulted model/effort
+ok - agy maps low/medium/high directly and falls unsupported classes back to medium rather than omitting the flag
+not ok - a raw agy launch spawned even with an allowlisted embedded model
+(exit=)
+
+--- tests/fm-spawn-agy-credential-preflight.test.sh ---
+ok - agy spawn refuses when no credential file is present
+ok - agy spawn refuses when the credential file exists but is empty
+ok - agy spawn accepts a present credential file
+ok - agy spawn refuses when GEMINI_API_KEY is set in the launch environment
+not ok - the launched agy child inherited GEMINI_API_KEY from the worker host: worker-host-key
+
+
+=== POST-FIX bin/fm-spawn.sh (f9a0602, working tree) vs the SAME tests ===
+
+--- tests/fm-agy-harness.test.sh ---
+ok - agy is detected through its own process ancestor
+ok - agy is detected through its ANTIGRAVITY_AGENT=1 environment marker
+ok - agy detection does not claim unrelated agy-containing commands
+ok - agy launch clears foreign harness markers before ancestry detection
+ok - agy spawn launches with autonomy, the interactive-prompt flag, and a defaulted model/effort
+ok - agy maps low/medium/high directly and falls unsupported classes back to medium rather than omitting the flag
+ok - a raw agy launch is refused even when the embedded model is the allowlisted literal
+ok - a raw agy launch cannot use an embedded --model to bypass the AC-2 allowlist
+ok - a raw agy launch is refused before AC-1's credential preflight could even run
+ok - a raw agy launch is refused before the subscription-only billing refusal could even run
+ok - AC-9's secondmate refusal still applies to a raw agy launch command
+ok - agy is refused as a secondmate harness
+ok - agy's control-plane lifecycle tables (interrupt, exit, kind support) are correctly registered
+ok - the agy delivery-confirmation regex matches its verified busy footer and not its idle footer
+
+--- tests/fm-spawn-agy-credential-preflight.test.sh ---
+ok - agy spawn refuses when no credential file is present
+ok - agy spawn refuses when the credential file exists but is empty
+ok - agy spawn accepts a present credential file
+ok - agy spawn refuses when GEMINI_API_KEY is set in the launch environment
+ok - the generated agy launch strips a worker-host GEMINI_API_KEY the caller-side refusal cannot see
+ok - agy spawn refuses when settings.json sets modelProvider
+ok - agy spawn refuses when settings.json sets useG1Credits to true
+ok - agy spawn accepts a settings.json that carries neither refused key
+ok - agy spawn fails closed rather than silently permitting an unparseable settings file
+
+--- tests/fm-spawn-agy-model-allowlist.test.sh ---
+ok - agy spawn refuses every model other than the literal gemini-3.7-flash
+ok - agy spawn accepts the exact literal allowlisted model
+ok - agy spawn defaults an unset model to the literal gemini-3.7-flash rather than agy's own choice
+ok - agy spawn treats the literal token 'default' the same as an unset model

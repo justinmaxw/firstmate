@@ -1,0 +1,139 @@
+
+================================================================
+SCENARIO 1 - raw launch command carrying a DISALLOWED model (the reported gap)
+================================================================
+
+$ bin/fm-spawn.sh agy-raw-disallowed-model-x1 <project> "agy --model gemini-3.5-pro -i 'raw brief'" --mode no-mistakes --yolo off
+error: a raw launch command is refused for harness=agy; it would bypass the verified adapter's credential preflight, model allowlist, and subscription-only billing refusal. Pass --harness agy (or the bare 'agy' positional) to use the verified template.
+  exit status: 1
+
+  state/agy-raw-disallowed-model-x1.meta:   (absent - no task was published)
+  command typed into the pane: (none - no endpoint was created)
+
+================================================================
+SCENARIO 2 - raw launch used to bypass the credential preflight and the GEMINI_API_KEY billing refusal
+================================================================
+
+  worker $HOME credential file: ABSENT
+  GEMINI_API_KEY in the caller environment: set (pay-as-you-go billing)
+
+$ GEMINI_API_KEY=leaked bin/fm-spawn.sh agy-raw-bypass-x1 <project> "agy --model gemini-3.7-flash --effort medium -i 'raw brief'" --mode no-mistakes --yolo off
+error: a raw launch command is refused for harness=agy; it would bypass the verified adapter's credential preflight, model allowlist, and subscription-only billing refusal. Pass --harness agy (or the bare 'agy' positional) to use the verified template.
+  exit status: 1
+
+  state/agy-raw-bypass-x1.meta:   (absent - no task was published)
+  command typed into the pane: (none - no endpoint was created)
+
+================================================================
+SCENARIO 3 - raw agy launch as a SECONDMATE (AC-9 still refuses first, unchanged)
+================================================================
+
+$ bin/fm-spawn.sh agy-raw-secondmate-x1 "agy --model gemini-3.7-flash --effort medium -i 'raw charter'" --secondmate
+error: agy is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary supervision protocol. Select a harness verified for secondmates.
+  exit status: 1
+  state/agy-raw-secondmate-x1.meta: (absent - no task was published)
+
+================================================================
+SCENARIO 4 - the supported path an operator is directed to still works
+================================================================
+
+$ bin/fm-spawn.sh agy-supported-path-x1 <project> agy --mode no-mistakes --yolo off
+warning: /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/supported-path/home/data/agy-supported-path-x1/brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned agy-supported-path-x1 harness=agy kind=ship mode=no-mistakes yolo=off window=firstmate:fm-agy-supported-path-x1 worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/supported-path/wt
+  exit status: 0
+
+  state/agy-supported-path-x1.meta:   
+    window=firstmate:fm-agy-supported-path-x1
+    endpoint_task_id=agy-supported-path-x1
+    worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/supported-path/wt
+    project=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/agy-evidence.tBOQ7U/supported-path/project
+    harness=agy
+    kind=ship
+    mode=no-mistakes
+    yolo=off
+    tasktmp=/tmp/fm-agy-supported-path-x1
+    model=gemini-3.7-flash
+    effort=medium
+    spawn_gen=s1787731100.7087.32729
+  command typed into the pane: 
+    env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u ANTIGRAVITY_AGENT AGY_CLI_DISABLE_AUTO_UPDATE=true env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_API_KEY '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/supported-path/fake/fakebin/agy' --dangerously-skip-permissions --model 'gemini-3.7-flash' --effort 'medium' -i "$('/Users/justinmaxw/.no-mistakes/worktrees/cc03fb9c14b5/01M0YETSP34YN78F1GYK0B8E40/bin/fm-operational-input.sh' encode launch-brief < '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/supported-path/home/data/agy-supported-path-x1/brief.md')"
+
+================================================================
+SCENARIO 4b - the other form the refusal names: --harness agy
+================================================================
+
+$ bin/fm-spawn.sh agy-harness-flag-x1 <project> --harness agy --mode no-mistakes --yolo off
+spawned agy-harness-flag-x1 harness=agy kind=ship mode=no-mistakes yolo=off window=firstmate:fm-agy-harness-flag-x1 worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/harness-flag/wt
+  exit status: 0
+
+  state/agy-harness-flag-x1.meta:   
+    window=firstmate:fm-agy-harness-flag-x1
+    endpoint_task_id=agy-harness-flag-x1
+    worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/harness-flag/wt
+    project=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/agy-evidence.tBOQ7U/harness-flag/project
+    harness=agy
+    kind=ship
+    mode=no-mistakes
+    yolo=off
+    tasktmp=/tmp/fm-agy-harness-flag-x1
+    model=gemini-3.7-flash
+    effort=medium
+    spawn_gen=s1787731102.7664.3493
+  command typed into the pane: 
+    env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u ANTIGRAVITY_AGENT AGY_CLI_DISABLE_AUTO_UPDATE=true env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_API_KEY '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/harness-flag/fake/fakebin/agy' --dangerously-skip-permissions --model 'gemini-3.7-flash' --effort 'medium' -i "$('/Users/justinmaxw/.no-mistakes/worktrees/cc03fb9c14b5/01M0YETSP34YN78F1GYK0B8E40/bin/fm-operational-input.sh' encode launch-brief < '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/harness-flag/home/data/agy-harness-flag-x1/brief.md')"
+
+================================================================
+SCENARIO 5 - GEMINI_API_KEY exported by the long-lived worker host, invisible to fm-spawn
+================================================================
+
+  GEMINI_API_KEY in fm-spawn's own environment: (unset - the caller-side refusal sees nothing)
+  GEMINI_API_KEY exported by the pane-creating daemon shell: worker-host-key
+
+$ bin/fm-spawn.sh agy-worker-host-key-x1 <project> agy --mode no-mistakes --yolo off   # launch really executed in the pane
+warning: /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/worker-host-key/home/data/agy-worker-host-key-x1/brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned agy-worker-host-key-x1 harness=agy kind=ship mode=no-mistakes yolo=off window=firstmate:fm-agy-worker-host-key-x1 worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/worker-host-key/wt
+  exit status: 0
+
+  state/agy-worker-host-key-x1.meta:   
+    window=firstmate:fm-agy-worker-host-key-x1
+    endpoint_task_id=agy-worker-host-key-x1
+    worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/worker-host-key/wt
+    project=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/agy-evidence.tBOQ7U/worker-host-key/project
+    harness=agy
+    kind=ship
+    mode=no-mistakes
+    yolo=off
+    tasktmp=/tmp/fm-agy-worker-host-key-x1
+    model=gemini-3.7-flash
+    effort=medium
+    spawn_gen=s1787731105.8245.27437
+  command typed into the pane: 
+    env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u ANTIGRAVITY_AGENT AGY_CLI_DISABLE_AUTO_UPDATE=true env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_API_KEY '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/worker-host-key/fake/fakebin/agy' --dangerously-skip-permissions --model 'gemini-3.7-flash' --effort 'medium' -i "$('/Users/justinmaxw/.no-mistakes/worktrees/cc03fb9c14b5/01M0YETSP34YN78F1GYK0B8E40/bin/fm-operational-input.sh' encode launch-brief < '/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/worker-host-key/home/data/agy-worker-host-key-x1/brief.md')"
+
+  GEMINI_API_KEY as the launched `agy` child itself saw it: ''
+
+================================================================
+SCENARIO 6 - the raw escape hatch is untouched for a genuinely UNVERIFIED adapter
+================================================================
+
+$ bin/fm-spawn.sh agy-raw-unverified-x1 <project> "frobnicate --model anything-at-all -i 'raw brief'" --mode no-mistakes --yolo off
+warning: /var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/raw-unverified/home/data/agy-raw-unverified-x1/brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned agy-raw-unverified-x1 harness=frobnicate kind=ship mode=no-mistakes yolo=off window=firstmate:fm-agy-raw-unverified-x1 worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/raw-unverified/wt
+  exit status: 0
+
+  state/agy-raw-unverified-x1.meta:   
+    window=firstmate:fm-agy-raw-unverified-x1
+    endpoint_task_id=agy-raw-unverified-x1
+    worktree=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T//agy-evidence.tBOQ7U/raw-unverified/wt
+    project=/var/folders/vs/mysq47512z94jnj2bfpr4skr0000gn/T/agy-evidence.tBOQ7U/raw-unverified/project
+    harness=frobnicate
+    kind=ship
+    mode=no-mistakes
+    yolo=off
+    tasktmp=/tmp/fm-agy-raw-unverified-x1
+    model=default
+    effort=default
+    spawn_gen=s1787731108.8970.7133
+  command typed into the pane: 
+    frobnicate --model anything-at-all -i 'raw brief'
+
