@@ -1309,6 +1309,20 @@ case "$HARNESS" in
       echo "error: harness=agy only ever launches the literal model 'gemini-3.7-flash'; got '$MODEL'" >&2
       exit 1
     fi
+    # effort_flag_for_harness ALWAYS emits an --effort value for agy, because
+    # agy's own CLI requires one, folding an empty, `default`, or unsupported
+    # class onto medium. Record that same resolved value here so task metadata
+    # names the effort the pane actually launched: for every other adapter
+    # `effort=default` truthfully means "no effort flag was passed", but agy has
+    # no flagless mode for that to describe. Gated on the non-raw path for the
+    # same reason MODEL is - a raw launch command receives no __EFFORTFLAG__
+    # placeholder and spells its own effort out.
+    if [ "$RAW_LAUNCH" -eq 0 ]; then
+      case "$EFFORT" in
+        low|medium|high) : ;;
+        *) EFFORT=medium ;;
+      esac
+    fi
     ;;
   pi|pi-signed)
     PI_BIN=$(resolve_pi_executable "$HARNESS") || {
@@ -1487,6 +1501,12 @@ agy_credential_present() {
 # jq failure (missing jq, malformed JSON) refuses rather than silently
 # permitting, because an unverifiable settings file is not evidence the
 # effective settings are safe.
+# FOLLOW-UP (deliberately not implemented here): the wider Gemini CLI tooling
+# family also honors a GOOGLE_GENAI_USE_VERTEXAI/GOOGLE_CLOUD_PROJECT
+# environment-variable Vertex vector. Whether agy itself reads those is
+# UNVERIFIED, and this guard refuses only vectors verified against agy 1.1.20,
+# so adding an unverified refusal here would block launches on no evidence.
+# Verify it against the vendor CLI first, then extend this function.
 agy_settings_permits_subscription_only() {  # <settings-path>
   local settings=$1 provider credits
   [ -z "${GEMINI_API_KEY:-}" ] || return 1

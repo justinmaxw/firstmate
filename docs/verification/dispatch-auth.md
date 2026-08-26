@@ -193,10 +193,36 @@ These discriminator strings are un-owned vendor UI text.
 `bin/fm-vendor-auth-probe.sh` pins the verified version, reports `versionVerified=no` when the running CLI differs, and classifies any unrecognized first line as `indeterminate` rather than authenticated.
 Re-run the two commands above and update this section and the pinned version together when the vendor CLI changes.
 
+## Standalone Antigravity CLI (agy) credential probe
+
+Verified 2026-08-26 on Antigravity CLI `1.1.20`.
+
+```sh
+agy --version   # stdin closed, single attempt, hard-bounded
+```
+
+Unlike grok, the `agy` probe runs NO discovery subcommand, so `--version` is the only agy invocation it ever makes.
+Every side-effect-free `agy` subcommand found either performs real subscription-backed inference (`-p`/`--print`), which this envelope must never do, or carries no confirmed authenticated-vs-unauthenticated discriminator that could be verified without forcing the captain's own live session to sign out.
+
+The discriminator is therefore a credential-storage fact rather than vendor output:
+
+- A completed interactive `agy` login persists its session at `~/.gemini/antigravity-cli/jetski_state.pbtxt` (mode `0600`), and every later local `agy` process - including a separate OS process launched by `bin/fm-spawn.sh` - reuses it with no re-prompt. This is the same fact spawn's AC-1 preflight establishes; `docs/verification/runtime-backends.md` records the live evidence.
+- The file's contents are never read, and neither the path nor any derived length, prefix, or hash is ever printed.
+
+The two branches are asymmetric, because the storage contract only supports one of them as ground truth:
+
+- **Absent or empty -> `unauthenticated`.** No stored session exists for a worker to reuse, so no launched `agy` pane could reach an authenticated session without an interactive sign-in.
+- **Present and non-empty -> `indeterminate`, never `authenticated`.** The file proves a login happened once, not that the session is still live: a revoked or expired Google session leaves it present and non-empty. `indeterminate` establishes nothing, which is exactly the strength of this evidence.
+
+`bin/fm-vendor-auth-probe.sh` pins the verified version and reports `versionVerified=no` when the running CLI differs.
+Re-run `agy --version` and re-confirm the credential path above, then update this section and the pinned version together when the vendor CLI changes.
+Promoting the present branch to `authenticated` requires first verifying a genuinely bounded, side-effect-free, both-branches-verifiable liveness discriminator and recording it here.
+
 ## Regression coverage
 
 `tests/fm-vendor-auth-probe.test.sh` drives the real script against a fake vendor CLI that records every invocation's argv and anything readable on stdin.
 It asserts that the script accepts no harness, model, or provider input, never calls `quota-axi`, exits alike for every probe result because it renders no verdict, invokes only the two fixed non-destructive argv forms with stdin closed, holds a real bound even when the configured bound is zero or malformed, and never echoes raw vendor output.
+The same suite drives the `agy` probe against a fake `agy` and a fake `HOME`: it pins that a present credential reports `indeterminate` rather than `authenticated`, that an absent one reports `unauthenticated`, that the only agy invocation is `--version`, and that an absent `agy` binary reports `unavailable` without consulting the credential path at all.
 `tests/fm-spawn-dispatch-profile.test.sh` owns spawn's deterministic profile and harness refusals.
 `tests/fm-bootstrap.test.sh` owns the quota-axi version-floor diagnostic.
 `tests/fm-quota-array-dispatch-live-e2e.test.sh` drives the public Pi skill-loading interface against one fake schema-5 snapshot per case, served as quota-axi's default TOON.

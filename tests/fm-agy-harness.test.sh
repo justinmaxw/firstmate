@@ -107,6 +107,10 @@ EOF
     "agy launch did not default the effort to medium"
   assert_grep 'harness=agy' "$home/state/$id.meta" "agy harness was not recorded in meta"
   assert_grep 'model=gemini-3.7-flash' "$home/state/$id.meta" "agy model was not recorded in meta"
+  # agy has no flagless mode, so `effort=default` would describe a launch that
+  # never happened. Metadata has to name the value the pane really launched.
+  assert_grep 'effort=medium' "$home/state/$id.meta" \
+    "agy meta recorded a default effort while the pane launched --effort 'medium'"
   pass "agy spawn launches with autonomy, the interactive-prompt flag, and a defaulted model/effort"
 }
 
@@ -130,6 +134,8 @@ EOF
       || fail "agy spawn with effort $effort failed"
     launch=$(cat "$home/launch.log")
     assert_contains "$launch" "$expect" "agy effort $effort did not map to '$expect'"
+    assert_grep "effort=$effort" "$home/state/$id.meta" \
+      "agy meta did not record the effort the pane launched with"
   done
 
   # agy's own CLI rejects --model gemini-3.7-flash with no --effort at all, so
@@ -146,6 +152,8 @@ EOF
   launch=$(cat "$home/launch.log")
   assert_contains "$launch" "--effort 'medium'" \
     "agy spawn did not fall back an unsupported effort class to medium"
+  assert_grep 'effort=medium' "$home/state/$id.meta" \
+    "agy meta recorded the requested xhigh while the pane launched the medium it fell back to"
   pass "agy maps low/medium/high directly and falls unsupported classes back to medium rather than omitting the flag"
 }
 
@@ -172,6 +180,8 @@ EOF
   expect_code 0 "$status" "a raw agy launch command should spawn"
   assert_grep "model=default" "$home/state/$id.meta" \
     "a raw agy launch recorded a model fm-spawn never placed in the launch command"
+  assert_grep "effort=default" "$home/state/$id.meta" \
+    "a raw agy launch recorded an effort fm-spawn never placed in the launch command"
   assert_contains "$(cat "$home/launch.log")" "--model gemini-3.5-pro" \
     "a raw agy launch did not run the command it was handed"
   pass "a raw agy launch records no fabricated model"
@@ -241,6 +251,17 @@ test_delivery_regex_matches_agy_busy_footer() {
     if printf '? for shortcuts                                     Gemini 3.7 Flash · medium' \
       | fm_busy_lines_match agy; then
       fail "the agy delivery regex matched its idle footer"
+    fi
+    # The submit cores read a pane they have no recorded harness for, so the
+    # harness-less union is the matcher that actually runs on a delivery. agy
+    # depends on it more than any other adapter: its composer verdict is
+    # permanently unknown, leaving the footer as the only confirmation signal.
+    printf 'esc to cancel                                          Gemini 3.7 Flash · medium' \
+      | fm_busy_lines_match \
+      || fail "the harness-less delivery union did not match agy's verified busy footer"
+    if printf '? for shortcuts                                     Gemini 3.7 Flash · medium' \
+      | fm_busy_lines_match; then
+      fail "the harness-less delivery union matched agy's idle footer"
     fi
   ) || fail "agy delivery-confirmation regex check failed"
   pass "the agy delivery-confirmation regex matches its verified busy footer and not its idle footer"

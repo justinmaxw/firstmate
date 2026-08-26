@@ -44,11 +44,17 @@
 #          bin/fm-spawn.sh's AC-1 preflight already establishes and records in
 #          docs/verification/runtime-backends.md: whether
 #          ~/.gemini/antigravity-cli/jetski_state.pbtxt exists and is
-#          non-empty. Its content is never read. version= still comes from the
-#          real, side-effect-free `agy --version`. A future pass that finds a
-#          genuinely bounded, side-effect-free, both-branches-verifiable CLI
-#          discriminator should record it in docs/verification/dispatch-auth.md
-#          and switch this probe onto it, matching the grok probe's shape.
+#          non-empty. Its content is never read. That fact is weaker in one
+#          direction than the other, so the branches are asymmetric: an absent
+#          or empty file is `unauthenticated` (no session file exists for a
+#          worker to reuse), while a PRESENT file is only `indeterminate` - it
+#          proves a login happened once, never that the session is still live,
+#          and a revoked session leaves the file behind untouched. version=
+#          still comes from the real, side-effect-free `agy --version`. A future
+#          pass that finds a genuinely bounded, side-effect-free,
+#          both-branches-verifiable CLI discriminator should record it in
+#          docs/verification/dispatch-auth.md and switch this probe onto it,
+#          matching the grok probe's shape.
 #
 # Output: exactly one sanitized `key=value` line on stdout. No token, refresh
 # token, header, path, length, prefix, hash, or raw vendor output is ever
@@ -96,7 +102,9 @@ Usage:
 Registered probes:
   grok   `grok models` on the standalone Grok Build CLI
   agy    Antigravity CLI; a worker-reachable-credential file check, never a
-         live agy invocation - see this file's header for why
+         live agy invocation - see this file's header for why. An absent
+         credential is unauthenticated; a present one is only indeterminate,
+         because it never proves the stored session is still live
 
 Prints one sanitized key=value line: probe, status, version, versionVerified.
 
@@ -204,10 +212,24 @@ agy_version() {
 # probe_agy: a file-existence check, never a live agy invocation - see this
 # file's header for why no bounded, side-effect-free, both-branches-verifiable
 # CLI discriminator is used here. The credential file path is never printed.
+#
+# The two branches are deliberately ASYMMETRIC, because the verified storage
+# contract only supports one of them as ground truth:
+#   absent/empty -> `unauthenticated`. Verified live (Antigravity CLI 1.1.20)
+#     that an authenticated agy session is persisted at this one path and every
+#     later local agy process reuses it, so no session file means no session a
+#     worker could reach.
+#   present      -> `indeterminate`, NOT `authenticated`. A present file proves
+#     a login happened once; it does not prove the session is still live. A
+#     revoked, expired, or otherwise dead Google session leaves the file present
+#     and non-empty, so claiming `authenticated` here would emit ground truth
+#     this probe never established. Switch this branch to `authenticated` only
+#     once a genuinely bounded, side-effect-free liveness discriminator is
+#     verified and recorded in docs/verification/dispatch-auth.md.
 probe_agy() {
   local cred="${HOME:-}/.gemini/antigravity-cli/jetski_state.pbtxt"
   if [ -s "$cred" ]; then
-    printf 'authenticated\n'
+    printf 'indeterminate\n'
   else
     printf 'unauthenticated\n'
   fi

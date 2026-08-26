@@ -308,6 +308,16 @@ test_claude_busy_signature_uses_real_capture_shapes() {
   printf 'Ctrl+c:cancel\n' > "$composer"
   pane_busy fallback || fail "no-harness fallback should retain Grok's shared signature"
 
+  # agy's rule-bordered composer collides with the shared Pi-pair detector, so
+  # its composer verdict is permanently unknown and the rendered footer is the
+  # only signal a submit can be confirmed with. The submit core reads panes with
+  # no recorded harness, so the footer has to be in this fallback union too.
+  printf 'esc to cancel\n' > "$composer"
+  pane_busy fallback || fail "no-harness fallback should recognize agy's busy footer"
+  pane_busy agy agy || fail "agy's own busy footer should be busy"
+  printf '? for shortcuts\n' > "$composer"
+  pane_busy fallback && fail "agy's idle footer must not read busy in the no-harness fallback"
+
   # A supplied harness must never use another harness's signature. This is
   # particularly important for Kimi: its idle key-tip rotation can include the
   # same cancel token Grok uses to mean busy.
