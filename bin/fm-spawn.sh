@@ -1228,10 +1228,11 @@ launch_template() {
   esac
 }
 
-# A raw launch command carries no __MODELFLAG__ placeholder, so nothing an
-# adapter resolves here can reach the command that actually runs. Adapters that
-# default a model must therefore leave MODEL alone on this path, or task
-# metadata would record a model the pane never launched.
+# A raw launch command carries none of a verified adapter's placeholders
+# (__MODELFLAG__, __AGYBIN__, and friends), so nothing an adapter resolves
+# here can reach the command that actually runs or gate it. Set once so a
+# verified adapter whose safety checks depend on those placeholders (agy) can
+# refuse the raw path outright rather than silently running unchecked.
 RAW_LAUNCH=0
 
 case "$ARG3" in
@@ -1294,17 +1295,30 @@ fi
 
 case "$HARNESS" in
   agy)
+    # The raw launch command escape hatch exists to verify a genuinely
+    # unverified adapter. agy already has a fully verified template whose
+    # AC-1 credential preflight and subscription-only billing refusal are
+    # gated on the __AGYBIN__ placeholder that only launch_template()'s own
+    # agy branch inserts, and whose AC-2 model allowlist and effort
+    # normalization below run against fm-spawn's own --model/--effort flags -
+    # none of which a raw command's argv participates in. A raw command whose
+    # first word resolves to agy would launch with none of those checks ever
+    # invoked, silently bypassing all of them rather than failing loudly.
+    # Refuse it outright instead of trying to parse or restrict an arbitrary
+    # shell command safely; --harness agy (or the bare `agy` positional) is
+    # the only supported path once an adapter is verified.
+    if [ "$RAW_LAUNCH" -eq 1 ]; then
+      echo "error: a raw launch command is refused for harness=agy; it would bypass the verified adapter's credential preflight, model allowlist, and subscription-only billing refusal. Pass --harness agy (or the bare 'agy' positional) to use the verified template." >&2
+      exit 1
+    fi
     # AC-2 (captain-approved): the ONLY allowed model identity is the literal
     # gemini-3.7-flash. An empty/default MODEL defaults to it rather than
     # falling through to whatever agy would pick on its own; anything else
     # refuses the launch outright. This is enforced here, in the launch path
     # itself, so a hand-typed --model override or a stale dispatch profile can
-    # never bypass it. The default is applied only when this adapter's own
-    # template is what launches: a raw launch command spells its own model out
-    # and never receives __MODELFLAG__, so defaulting there would record a
-    # model in task metadata that the pane never ran.
+    # never bypass it.
     if [ -z "$MODEL" ] || [ "$MODEL" = default ]; then
-      [ "$RAW_LAUNCH" -eq 1 ] || MODEL=gemini-3.7-flash
+      MODEL=gemini-3.7-flash
     elif [ "$MODEL" != gemini-3.7-flash ]; then
       echo "error: harness=agy only ever launches the literal model 'gemini-3.7-flash'; got '$MODEL'" >&2
       exit 1
@@ -1313,16 +1327,12 @@ case "$HARNESS" in
     # agy's own CLI requires one, folding an empty, `default`, or unsupported
     # class onto medium. Record that same resolved value here so task metadata
     # names the effort the pane actually launched: for every other adapter
-    # `effort=default` truthfully means "no effort flag was passed", but agy has
-    # no flagless mode for that to describe. Gated on the non-raw path for the
-    # same reason MODEL is - a raw launch command receives no __EFFORTFLAG__
-    # placeholder and spells its own effort out.
-    if [ "$RAW_LAUNCH" -eq 0 ]; then
-      case "$EFFORT" in
-        low|medium|high) : ;;
-        *) EFFORT=medium ;;
-      esac
-    fi
+    # `effort=default` truthfully means "no effort flag was passed", but agy
+    # has no flagless mode for that to describe.
+    case "$EFFORT" in
+      low|medium|high) : ;;
+      *) EFFORT=medium ;;
+    esac
     ;;
   pi|pi-signed)
     PI_BIN=$(resolve_pi_executable "$HARNESS") || {

@@ -157,34 +157,112 @@ EOF
   pass "agy maps low/medium/high directly and falls unsupported classes back to medium rather than omitting the flag"
 }
 
-# The raw launch command is the documented unverified-adapter escape hatch. It
-# carries no __MODELFLAG__ placeholder, so nothing fm-spawn resolves can reach
-# the command that actually runs; defaulting the model there would record a
-# model in task metadata that the pane never launched, which quota accounting
-# would later read as truth.
-test_raw_launch_records_no_fabricated_model() {
-  local rec case_dir home proj wt fakebin id agyhome status
-  rec=$(make_agy_case "$TMP_ROOT" raw-launch)
-  IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
-$rec
-EOF
-  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+# The raw launch command is the documented unverified-adapter escape hatch,
+# and it carries none of a verified adapter's placeholders (__MODELFLAG__,
+# __AGYBIN__), so nothing fm-spawn resolves can reach the command that
+# actually runs or gate it. For agy that would silently bypass AC-1's
+# credential preflight, AC-2's model allowlist, AC-9's secondmate refusal, and
+# the subscription-only billing refusal all at once - a raw command's argv is
+# never inspected by any of them. fm-spawn refuses every raw command whose
+# first word resolves to agy outright, regardless of what the caller embedded
+# in it, rather than trying to parse or restrict an arbitrary shell command
+# safely.
+run_raw_agy_spawn() {  # <home> <proj> <wt> <fakebin> <id> <agyhome> <raw-command> [extra env=val ...]
+  local home=$1 proj=$2 wt=$3 fakebin=$4 id=$5 agyhome=$6 raw=$7
+  shift 7
+  env "$@" \
+    FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
     FM_FAKE_LAUNCH_LOG="$home/launch.log" \
     HOME="$agyhome" PATH="$fakebin:$PATH" \
-    "$AGY_SPAWN" "$id" "$proj" "agy --model gemini-3.5-pro -i 'raw brief'" \
-    --mode no-mistakes --yolo off >/dev/null 2>&1
+    "$AGY_SPAWN" "$id" "$proj" "$raw" --mode no-mistakes --yolo off 2>&1
+}
+
+test_raw_launch_refused_even_with_allowlisted_model() {
+  local rec case_dir home proj wt fakebin id agyhome out status
+  rec=$(make_agy_case "$TMP_ROOT" raw-allowlisted)
+  IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
+$rec
+EOF
+  out=$(run_raw_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" \
+    "agy --model gemini-3.7-flash --effort medium -i 'raw brief'")
   status=$?
-  expect_code 0 "$status" "a raw agy launch command should spawn"
-  assert_grep "model=default" "$home/state/$id.meta" \
-    "a raw agy launch recorded a model fm-spawn never placed in the launch command"
-  assert_grep "effort=default" "$home/state/$id.meta" \
-    "a raw agy launch recorded an effort fm-spawn never placed in the launch command"
-  assert_contains "$(cat "$home/launch.log")" "--model gemini-3.5-pro" \
-    "a raw agy launch did not run the command it was handed"
-  pass "a raw agy launch records no fabricated model"
+  [ "$status" -ne 0 ] || fail "a raw agy launch spawned even with an allowlisted embedded model"
+  assert_contains "$out" "raw launch command is refused for harness=agy" \
+    "raw agy refusal did not name the reason"
+  assert_absent "$home/state/$id.meta" "refused raw agy spawn still published task metadata"
+  assert_absent "$home/launch.log" "refused raw agy spawn still created an endpoint"
+  pass "a raw agy launch is refused even when the embedded model is the allowlisted literal"
+}
+
+test_raw_launch_cannot_bypass_model_allowlist() {
+  local rec case_dir home proj wt fakebin id agyhome out status
+  rec=$(make_agy_case "$TMP_ROOT" raw-model-bypass)
+  IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
+$rec
+EOF
+  out=$(run_raw_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" \
+    "agy --model gemini-3.5-pro -i 'raw brief'")
+  status=$?
+  [ "$status" -ne 0 ] || fail "a raw agy launch bypassed AC-2 with a disallowed embedded model"
+  assert_not_contains "$(cat "$home/launch.log" 2>/dev/null || true)" "gemini-3.5-pro" \
+    "a disallowed embedded model reached an endpoint"
+  pass "a raw agy launch cannot use an embedded --model to bypass the AC-2 allowlist"
+}
+
+test_raw_launch_cannot_bypass_credential_preflight() {
+  local rec case_dir home proj wt fakebin id agyhome out status
+  rec=$(make_agy_case "$TMP_ROOT" raw-no-credential absent)
+  IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
+$rec
+EOF
+  out=$(run_raw_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" \
+    "agy --model gemini-3.7-flash --effort medium -i 'raw brief'")
+  status=$?
+  [ "$status" -ne 0 ] || fail "a raw agy launch spawned with no worker-reachable credential"
+  assert_absent "$home/launch.log" "a raw agy launch with no credential still created an endpoint"
+  pass "a raw agy launch is refused before AC-1's credential preflight could even run"
+}
+
+test_raw_launch_cannot_bypass_billing_refusal() {
+  local rec case_dir home proj wt fakebin id agyhome out status
+  rec=$(make_agy_case "$TMP_ROOT" raw-billing-bypass)
+  IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
+$rec
+EOF
+  out=$(run_raw_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" \
+    "agy --model gemini-3.7-flash --effort medium -i 'raw brief'" GEMINI_API_KEY=leaked-key)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a raw agy launch spawned with GEMINI_API_KEY set, bypassing the billing refusal"
+  assert_absent "$home/launch.log" "a raw agy launch with GEMINI_API_KEY set still created an endpoint"
+  pass "a raw agy launch is refused before the subscription-only billing refusal could even run"
+}
+
+test_raw_launch_secondmate_still_refused_for_agy() {
+  local case_dir home fakebin id agyhome out status
+  case_dir="$TMP_ROOT/raw-secondmate"
+  home="$case_dir/home"
+  agyhome="$case_dir/agyhome"
+  fakebin=$(make_agy_fakebin "$case_dir/fake")
+  id="agy-raw-secondmate-x1"
+  mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" \
+    "$agyhome/$(dirname "$AGY_CREDENTIAL_RELPATH")"
+  printf 'charter\n' > "$home/data/$id/brief.md"
+  agy_seed_credential "$agyhome"
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" HOME="$agyhome" \
+    PATH="$fakebin:$PATH" \
+    "$AGY_SPAWN" "$id" "agy --model gemini-3.7-flash --effort medium -i 'raw charter'" --secondmate 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a raw agy launch was accepted as a secondmate harness"
+  assert_contains "$out" "crewmate/scout adapter only" \
+    "raw-launch agy secondmate refusal did not explain the boundary (AC-9 must apply before harness resolution matters)"
+  assert_absent "$home/state/$id.meta" "refused raw agy secondmate spawn still published task metadata"
+  pass "AC-9's secondmate refusal still applies to a raw agy launch command"
 }
 
 # --- secondmate refusal (AC-9) ------------------------------------------
@@ -273,7 +351,11 @@ test_detection_is_anchored
 test_spawn_clears_inherited_foreign_harness_markers
 test_spawn_launch_shape
 test_spawn_maps_effort
-test_raw_launch_records_no_fabricated_model
+test_raw_launch_refused_even_with_allowlisted_model
+test_raw_launch_cannot_bypass_model_allowlist
+test_raw_launch_cannot_bypass_credential_preflight
+test_raw_launch_cannot_bypass_billing_refusal
+test_raw_launch_secondmate_still_refused_for_agy
 test_secondmate_spawn_refused
 test_control_lib_lifecycle_tables
 test_delivery_regex_matches_agy_busy_footer
