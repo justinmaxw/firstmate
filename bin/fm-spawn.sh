@@ -1223,7 +1223,16 @@ launch_template() {
     # (documented in the captain-approved spec's Stage 0 addendum). agy's
     # turn-end signal rides neither the launch command nor a hook - see the
     # note above the launch templates for why nothing is armed for it.
-    agy) printf '%s' 'AGY_CLI_DISABLE_AUTO_UPDATE=true env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS __AGYBIN__ --dangerously-skip-permissions __MODELFLAG____EFFORTFLAG__-i "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
+    # GEMINI_API_KEY is unset on the launch itself, not only refused in
+    # fm-spawn's own environment: the pane is created by a long-lived
+    # tmux/herdr daemon whose shell can export the key from an rc file
+    # fm-spawn never read (the same caller-vs-worker environment split
+    # muse_worker_meta_api_key_present exists for), and a key agy can see
+    # switches the run onto pay-as-you-go API billing instead of the Google
+    # AI Pro/Ultra subscription this pool exists to use. Stripping it here
+    # makes that invariant hold at the pane on every backend, since every
+    # backend runs this same command string.
+    agy) printf '%s' 'AGY_CLI_DISABLE_AUTO_UPDATE=true env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_API_KEY __AGYBIN__ --dangerously-skip-permissions __MODELFLAG____EFFORTFLAG__-i "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     *) return 1 ;;
   esac
 }
@@ -1517,6 +1526,10 @@ agy_credential_present() {
 # UNVERIFIED, and this guard refuses only vectors verified against agy 1.1.20,
 # so adding an unverified refusal here would block launches on no evidence.
 # Verify it against the vendor CLI first, then extend this function.
+# The GEMINI_API_KEY arm reads fm-spawn's OWN process environment, which is
+# not the pane's, so it is the loud early diagnostic rather than the
+# guarantee; the pane-level guarantee is the `env -u GEMINI_API_KEY` prefix
+# on agy's launch template above.
 agy_settings_permits_subscription_only() {  # <settings-path>
   local settings=$1 provider credits
   [ -z "${GEMINI_API_KEY:-}" ] || return 1

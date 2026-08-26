@@ -75,6 +75,34 @@ EOF
   pass "agy spawn refuses when GEMINI_API_KEY is set in the launch environment"
 }
 
+# The refusal above reads fm-spawn's OWN process environment, which is not
+# the environment the pane runs in: crewmate panes are created by a
+# long-lived tmux/herdr daemon whose shell can export GEMINI_API_KEY from an
+# rc file firstmate never read, so the caller-side check passes while agy
+# still lands on pay-as-you-go API billing. The generated launch has to
+# strip the key from the actual child environment. This drives the real
+# launch and asks the launched `agy` what it could see, because asserting
+# only that the spawn exited 0 would pass with the strip deleted.
+test_launch_strips_worker_host_gemini_api_key() {
+  local rec case_dir home proj wt fakebin id agyhome seen out status
+  rec=$(make_agy_case "$TMP_ROOT" worker-host-api-key)
+  IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
+$rec
+EOF
+  seen="$case_dir/agy-child-gemini-key"
+  out=$(FM_FAKE_EXECUTE_AGY_LAUNCH=1 FM_FAKE_AGY_ENV_RESULT="$seen" \
+    FM_FAKE_WORKER_GEMINI_API_KEY=worker-host-key \
+    run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome")
+  status=$?
+  expect_code 0 "$status" \
+    "agy spawn should succeed when GEMINI_API_KEY is absent from fm-spawn's own environment: $out"
+  [ -f "$seen" ] \
+    || fail "the generated agy launch never executed, so the child's view of GEMINI_API_KEY was never recorded"
+  [ -z "$(cat "$seen")" ] \
+    || fail "the launched agy child inherited GEMINI_API_KEY from the worker host: $(cat "$seen")"
+  pass "the generated agy launch strips a worker-host GEMINI_API_KEY the caller-side refusal cannot see"
+}
+
 test_refuses_settings_model_provider() {
   local rec case_dir home proj wt fakebin id agyhome out status
   rec=$(make_agy_case "$TMP_ROOT" settings-provider)
@@ -137,6 +165,7 @@ test_refuses_without_credential_file
 test_refuses_empty_credential_file
 test_accepts_present_credential
 test_refuses_gemini_api_key_env
+test_launch_strips_worker_host_gemini_api_key
 test_refuses_settings_model_provider
 test_refuses_use_g1_credits
 test_accepts_clean_settings_file

@@ -45,6 +45,12 @@ agy_seed_credential() {  # <agyhome>
 # payload to $FM_FAKE_LAUNCH_LOG and, when FM_FAKE_EXECUTE_AGY_LAUNCH=1, runs
 # the agy launch payload in the pane's worktree, plus a fake `agy` on PATH.
 #
+# FM_FAKE_WORKER_GEMINI_API_KEY exports that key into the executing pane's
+# environment ONLY - never into fm-spawn's own - which is how a long-lived
+# backend daemon's shell rc reaches the worker but not the caller. The fake
+# `agy` records its own view of GEMINI_API_KEY at $FM_FAKE_AGY_ENV_RESULT
+# when that is set, so a suite can assert what the real child could see.
+#
 # The fake `agy` is a wrapper script rather than a renamed shell because the
 # generated launch hands it agy's own flags, which a bare shell rejects before
 # running anything. When FM_FAKE_HARNESS_RESULT is set the wrapper re-execs
@@ -74,7 +80,15 @@ case "${1:-}" in
         printf '%s\n' "$arg" >> "$FM_FAKE_LAUNCH_LOG"
         if [ "${FM_FAKE_EXECUTE_AGY_LAUNCH:-}" = 1 ]; then
           case "$arg" in
-            *"$FM_FAKE_AGY_EXECUTABLE"*) (cd "$FM_FAKE_PANE_PATH" && bash -c "$arg") ;;
+            *"$FM_FAKE_AGY_EXECUTABLE"*)
+              (
+                cd "$FM_FAKE_PANE_PATH" || exit 1
+                if [ -n "${FM_FAKE_WORKER_GEMINI_API_KEY:-}" ]; then
+                  export GEMINI_API_KEY="$FM_FAKE_WORKER_GEMINI_API_KEY"
+                fi
+                bash -c "$arg"
+              )
+              ;;
           esac
         fi
         break
@@ -92,6 +106,8 @@ SH
   cat > "$fakebin/agy" <<'SH'
 #!/usr/bin/env bash
 set -u
+[ -z "${FM_FAKE_AGY_ENV_RESULT:-}" ] \
+  || printf '%s' "${GEMINI_API_KEY:-}" > "$FM_FAKE_AGY_ENV_RESULT"
 [ -n "${FM_FAKE_HARNESS_RESULT:-}" ] || exit 0
 exec "$FM_FAKE_AGY_ENGINE" -c 'result=$("$FM_FAKE_HARNESS_PROBE"); printf "%s" "$result" > "$FM_FAKE_HARNESS_RESULT"'
 SH
@@ -141,6 +157,8 @@ run_agy_spawn() {
     FM_FAKE_HARNESS_PROBE="$AGY_HARNESS_PROBE" \
     FM_FAKE_EXECUTE_AGY_LAUNCH="${FM_FAKE_EXECUTE_AGY_LAUNCH:-}" \
     FM_FAKE_HARNESS_RESULT="${FM_FAKE_HARNESS_RESULT:-}" \
+    FM_FAKE_AGY_ENV_RESULT="${FM_FAKE_AGY_ENV_RESULT:-}" \
+    FM_FAKE_WORKER_GEMINI_API_KEY="${FM_FAKE_WORKER_GEMINI_API_KEY:-}" \
     HOME="$agyhome" \
     PATH="$fakebin:$PATH" \
     "$AGY_SPAWN" "$id" "$proj" agy --mode no-mistakes --yolo off "$@" 2>&1
