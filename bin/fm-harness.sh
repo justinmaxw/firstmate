@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Detect the agent harness this process tree runs on.
-# Usage: fm-harness.sh                  print own harness: claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|muse|unknown
+# Usage: fm-harness.sh                  print own harness: claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|muse|agy|unknown
 #        fm-harness.sh crew             print the effective CREWMATE harness
 #                                        (config/crew-harness; "default" resolves to own)
 #        fm-harness.sh secondmate       print the harness the PRIMARY uses to launch
@@ -65,6 +65,9 @@ detect_own() {
   # identified, and any rule that must be RELIABLE under grok has to test the hook
   # markers too (see .claude/settings.json Stop entries, docs/turnend-guard.md).
   [ "${GROK_AGENT:-}" = "1" ] && { echo grok; return; }
+  # agy set ANTIGRAVITY_AGENT=1 for its child/tool processes (verified, agy
+  # 1.1.20); see the fuller marker note below.
+  [ "${ANTIGRAVITY_AGENT:-}" = "1" ] && { echo agy; return; }
   # muse (Muse Code) publishes no harness-identity marker of its own. The only
   # MUSE_* variable it is documented to hand a child is MUSE_CURRENT_SESSION_LOG,
   # a per-session log PATH rather than an identity, and its export to tool
@@ -72,6 +75,14 @@ detect_own() {
   # by ancestry alone below. Do NOT promote MUSE_CURRENT_SESSION_LOG to a marker
   # without verifying it reaches children AND that it cannot survive in a
   # multiplexer's stored environment, which is the precedence hazard above.
+  # agy (Antigravity CLI) sets ANTIGRAVITY_AGENT=1 for its child/tool
+  # processes (verified live, agy 1.1.20, from a real shell tool child's own
+  # `env` dump). It does not set CLAUDECODE despite sharing the same
+  # --dangerously-skip-permissions flag name, so the marker is unambiguous
+  # WHEN PRESENT, following the same fast-path-only caution grok's own marker
+  # documentation states above: it is not yet known whether every agy
+  # subprocess shape (hooks, if any are added later) reliably carries it, so
+  # the ancestry walk below remains the guarantee.
   # Layer 2: walk the parent chain and match the command name.
   local pid=$$ comm args argv0
   for _ in 1 2 3 4 5 6 7 8; do
@@ -93,6 +104,12 @@ detect_own() {
       # prefix rather than any exact name. Deliberately anchored, never *muse*, so
       # unrelated commands (musescore, amuse) cannot be misread as this harness.
       muse|muse-bin-*) echo muse; return ;;
+      # agy's live process name is the exact installed binary name with no
+      # version suffix and no wrapper exec (verified: agy 1.1.20, `ps -o comm=`
+      # on the running interactive pane reports exactly `agy`). Anchored exact
+      # match rather than a glob: at three letters, `agy` is short enough that a
+      # substring glob risks matching an unrelated command.
+      agy) echo agy; return ;;
       pi-signed) echo pi; return ;;
       pi) echo pi; return ;;
       node*|python*)

@@ -104,8 +104,10 @@
 #   profile consultation. A --secondmate spawn is exempt and resolves the SECONDMATE
 #   harness (config/secondmate-harness -> config/crew-harness -> own), so the
 #   secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
-#   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|muse)
-#   overrides it for this spawn (either kind). A non-flag string containing
+#   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|muse|agy)
+#   overrides it for this spawn (either kind); agy (Antigravity CLI) is
+#   CREWMATE/SCOUT only, matching muse, and a --secondmate spawn refuses it.
+#   A non-flag string containing
 #   whitespace is treated as a RAW launch command - the escape hatch for verifying
 #   new adapters. For pi and pi-signed, fm-spawn resolves the selected executable
 #   name from PATH once, probes that concrete path with --help, and launches the
@@ -161,6 +163,7 @@
 #     __OPINPUT__   absolute path to the canonical operational-input encoder
 #     __WORKTREE__  absolute path to the task worktree
 #     __CURSORBIN__ resolved, cursor-verified executable for a cursor launch
+#     __AGYBIN__    resolved, agy-verified executable for an agy launch
 # Verified per-harness turn-end hooks are installed automatically where enabled; some live outside the worktree.
 # Kimi uses one surgically installed Firstmate region in $HOME/.kimi-code/config.toml,
 # a firstmate-owned global hook and registry, and a gitignored per-task pointer.
@@ -169,6 +172,14 @@
 # muse installs no hook at all - its plugin engine is off in the default build - so
 # it writes state/<id>.muse-session to bind the pane to muse's own session event
 # log; muse is crewmate/scout only and is refused for --secondmate.
+# agy installs neither a hook nor a busy-state binding of any kind: no
+# confirmed hook/lifecycle surface was found for its interactive mode, and its
+# own conversation storage is an undocumented per-conversation SQLite file
+# actively written by the live pane, not a safe structural source to poll (see
+# bin/fm-busy-lib.sh, which registers no source for it - fm_busy_classify
+# reports agy unknown until one is live-verified, matching standalone Kimi
+# before its own verification). agy is crewmate/scout only, like muse, and is
+# refused for --secondmate.
 # cursor installs no per-task hook either: it writes state/<id>.cursor-session to
 # bind the pane to cursor's own conversation transcript (projects root, the exact
 # workspace path cursor records in .workspace-trusted, and the conversations that
@@ -1061,7 +1072,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
   }
 elif [ "$KIND" = secondmate ]; then
   case "${POS[1]:-}" in
-    ''|claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|muse)
+    ''|claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|muse|agy)
       ARG3=${POS[1]:-}
       ;;
     *' '*)
@@ -1163,7 +1174,7 @@ launch_template() {
     # inherited CLAUDECODE cannot outrank cursor's own marker in a process that
     # only reads the environment. Cursor exposes no effort flag, so the shared
     # effort axis is deliberately omitted and stays in task metadata only.
-    cursor) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u CURSOR_INVOKED_AS __CURSORBIN__ --trust --yolo __MODELFLAG__--workspace __WORKTREE__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
+    cursor) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u ANTIGRAVITY_AGENT -u CURSOR_INVOKED_AS __CURSORBIN__ --trust --yolo __MODELFLAG__--workspace __WORKTREE__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     # Kimi Code rejects a positional prompt, so it launches bare and receives
     # only an absolute brief pointer after the TUI readiness gate below.
     # Its turn-end signal is a globally configured Stop hook plus a guarded
@@ -1190,7 +1201,29 @@ launch_template() {
     # session event log instead (bin/fm-busy-lib.sh), bound by the sidecar
     # written below. Nothing to place in the template for it.
     # codex, opencode, and kimi are also markerless and share this inherited-marker hazard; changing their verified launch boundaries belongs in follow-up work.
-    muse) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS XDG_CONFIG_HOME=__MUSECONFIG__ XDG_DATA_HOME=__MUSEDATA__ MUSE_EXPERIMENTAL_FOREIGN_PERSONAL_CONTEXT_KILL=on __MUSEBIN__ --yolo __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
+    muse) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u ANTIGRAVITY_AGENT XDG_CONFIG_HOME=__MUSECONFIG__ XDG_DATA_HOME=__MUSEDATA__ MUSE_EXPERIMENTAL_FOREIGN_PERSONAL_CONTEXT_KILL=on __MUSEBIN__ --yolo __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
+    # agy (Antigravity CLI): -i/--prompt-interactive starts the supervised
+    # interactive session with the brief as its own flag value, the same
+    # positional-prompt-then-interactive shape as grok/muse/pi (verified live,
+    # agy 1.1.20). --dangerously-skip-permissions is the targeted equivalent of
+    # claude's own identically-named flag: it auto-approves every tool call
+    # (shell, file write, browser, MCP, and subagent) with no per-call prompt,
+    # which an unattended crewmate needs - agy's default request-review mode
+    # blocks on every tool call with no way to keep shell/file-write autonomy
+    # while gating subagent spawning specifically, so this carries the same
+    # disclosed recursive-subagent risk every other full-autonomy adapter flag
+    # already carries fleet-wide (Claude's own equivalent guard,
+    # bin/fm-subagent-pretool-check.sh, is PRIMARY-scoped, so Claude crewmates
+    # carry this identical risk today). It does NOT suppress the separate
+    # first-launch-per-path workspace-trust dialog ("Do you trust the contents
+    # of this project?"); that persists per path like codex/pi and needs the
+    # same post-spawn peek-and-accept the harness-adapters skill documents for
+    # them. AGY_CLI_DISABLE_AUTO_UPDATE=true avoids lock contention on agy's
+    # own background self-updater when several crewmates launch close together
+    # (documented in the captain-approved spec's Stage 0 addendum). agy's
+    # turn-end signal rides neither the launch command nor a hook - see the
+    # note above the launch templates for why nothing is armed for it.
+    agy) printf '%s' 'AGY_CLI_DISABLE_AUTO_UPDATE=true env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS __AGYBIN__ --dangerously-skip-permissions __MODELFLAG____EFFORTFLAG__-i "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     *) return 1 ;;
   esac
 }
@@ -1242,7 +1275,31 @@ if [ "$KIND" = secondmate ] && [ "$HARNESS" = muse ]; then
   exit 1
 fi
 
+# agy (Antigravity CLI) is verified as a CREWMATE/SCOUT adapter only, the same
+# reason and the same refusal shape as muse above: no confirmed hook/lifecycle
+# surface exists for it to build a primary supervision protocol on, and
+# secondmate support needs its own separate credential/lifecycle design
+# (captain-approved spec AC-9).
+if [ "$KIND" = secondmate ] && [ "$HARNESS" = agy ]; then
+  echo "error: agy is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary supervision protocol. Select a harness verified for secondmates." >&2
+  exit 1
+fi
+
 case "$HARNESS" in
+  agy)
+    # AC-2 (captain-approved): the ONLY allowed model identity is the literal
+    # gemini-3.7-flash. An empty/default MODEL defaults to it rather than
+    # falling through to whatever agy would pick on its own; anything else
+    # refuses the launch outright. This is enforced here, in the launch path
+    # itself, so a hand-typed --model override or a stale dispatch profile can
+    # never bypass it.
+    if [ -z "$MODEL" ] || [ "$MODEL" = default ]; then
+      MODEL=gemini-3.7-flash
+    elif [ "$MODEL" != gemini-3.7-flash ]; then
+      echo "error: harness=agy only ever launches the literal model 'gemini-3.7-flash'; got '$MODEL'" >&2
+      exit 1
+    fi
+    ;;
   pi|pi-signed)
     PI_BIN=$(resolve_pi_executable "$HARNESS") || {
       echo "error: $HARNESS executable not found on PATH; install it or select a different verified harness" >&2
@@ -1372,11 +1429,70 @@ muse_credential_present() {
   [ -s "$auth" ] || muse_worker_meta_api_key_present
 }
 
+resolve_agy_binary() {
+  local candidate dir
+  candidate=$(command -v agy 2>/dev/null || true)
+  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+    case "$candidate" in
+      /*) printf '%s\n' "$candidate"; return 0 ;;
+      *)
+        dir=$(cd "$(dirname "$candidate")" 2>/dev/null && pwd -P) || dir=
+        if [ -n "$dir" ]; then
+          printf '%s/%s\n' "$dir" "$(basename "$candidate")"
+          return 0
+        fi
+        ;;
+    esac
+  fi
+  echo "error: agy executable not found on PATH; install Antigravity CLI or select a different verified harness" >&2
+  return 1
+}
+
+# agy_credential_present: 0 when a launched agy pane can reach an already
+# authenticated Google AI Pro/Ultra subscription session with no interactive
+# browser sign-in (AC-1). Verified live (Antigravity CLI 1.1.20, 2026-08-26):
+# the captain's own interactive `agy` login persists a session at
+# ~/.gemini/antigravity-cli/jetski_state.pbtxt (mode 0600) that every
+# subsequent local agy process - a separate OS process launched by fm-spawn
+# included - silently reuses with no re-prompt. This is a PREFLIGHT rather
+# than a rendered-screen check because an unauthenticated interactive pane
+# does not exit: it sits on a "Do you trust the contents of this project?" /
+# Google sign-in flow waiting for a human who is not there, which supervision
+# would read as a wedged worker rather than a missing credential. The file's
+# contents are never read.
+agy_credential_present() {
+  local cred=$1
+  [ -s "$cred" ]
+}
+
+# agy_settings_permits_subscription_only: refuses the launch when the
+# captain's own effective Antigravity settings would route a run onto
+# API-key/Vertex billing or personal-credit top-ups instead of the Google AI
+# Pro/Ultra subscription this pool exists to use (captain-approved
+# refinement). GEMINI_API_KEY and a settings.json modelProvider key both
+# switch agy onto pay-as-you-go API billing (Antigravity's own official
+# headless docs; the captain's intake explicitly excludes this - see the
+# spec). useG1Credits defaulting true would silently spend the captain's own
+# paid personal-credit top-ups once the subscription quota is exhausted. Any
+# jq failure (missing jq, malformed JSON) refuses rather than silently
+# permitting, because an unverifiable settings file is not evidence the
+# effective settings are safe.
+agy_settings_permits_subscription_only() {  # <settings-path>
+  local settings=$1 provider credits
+  [ -z "${GEMINI_API_KEY:-}" ] || return 1
+  [ -f "$settings" ] || return 0
+  provider=$(jq -r '.modelProvider // empty' "$settings" 2>/dev/null) || return 1
+  [ -z "$provider" ] || return 1
+  credits=$(jq -r 'if .useG1Credits == true then "true" else "false" end' "$settings" 2>/dev/null) || return 1
+  [ "$credits" = false ] || return 1
+  return 0
+}
+
 model_flag_for_harness() {
   local harness=$1 model=$2
   [ -n "$model" ] && [ "$model" != default ] || return 0
   case "$harness" in
-    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|muse)
+    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|muse|agy)
       printf -- '--model %s ' "$(shell_quote "$model")"
       ;;
   esac
@@ -1384,6 +1500,23 @@ model_flag_for_harness() {
 
 effort_flag_for_harness() {
   local harness=$1 effort=$2
+  if [ "$harness" = agy ]; then
+    # agy's own CLI REQUIRES --effort whenever --model gemini-3.7-flash is
+    # given (verified live, agy 1.1.20: omitting it fails loudly with
+    # "--model gemini-3.7-flash requires --effort (available: low, medium,
+    # high)"), so the generic "omit an unset/unsupported effort" rule below
+    # cannot apply here - agy has no flagless default to fall back to. medium
+    # is the captain-approved default when the caller names none; an
+    # unsupported class (xhigh, max) falls back to that same default instead
+    # of passing a value agy would reject, preserving launch success the same
+    # way every other harness's unsupported-value handling does.
+    case "$effort" in
+      low|medium|high) : ;;
+      *) effort=medium ;;
+    esac
+    printf -- '--effort %s ' "$(shell_quote "$effort")"
+    return 0
+  fi
   [ -n "$effort" ] && [ "$effort" != default ] || return 0
   case "$harness" in
     claude)
@@ -1456,6 +1589,23 @@ case "$LAUNCH" in
     LAUNCH=${LAUNCH//__MUSEBIN__/$(shell_quote "$MUSE_BIN")}
     LAUNCH=${LAUNCH//__MUSECONFIG__/$(shell_quote "$MUSE_CONFIG_HOME")}
     LAUNCH=${LAUNCH//__MUSEDATA__/$(shell_quote "$MUSE_DATA_HOME")}
+    ;;
+esac
+
+case "$LAUNCH" in
+  *__AGYBIN__*)
+    AGY_BIN=$(resolve_agy_binary) || exit 1
+    AGY_CRED_FILE="${HOME:-}/.gemini/antigravity-cli/jetski_state.pbtxt"
+    AGY_SETTINGS_FILE="${HOME:-}/.gemini/antigravity-cli/settings.json"
+    if ! agy_credential_present "$AGY_CRED_FILE"; then
+      echo "error: agy has no worker-reachable Antigravity credential; '$AGY_CRED_FILE' is absent or empty. Sign in once interactively with 'agy' (a captain-performed Google account login) before spawning an agy worker." >&2
+      exit 1
+    fi
+    if ! agy_settings_permits_subscription_only "$AGY_SETTINGS_FILE"; then
+      echo "error: agy's effective settings would permit API-key/Vertex billing or personal-credit top-ups instead of the Google AI Pro/Ultra subscription this pool exists to use; unset GEMINI_API_KEY and clear modelProvider/useG1Credits in '$AGY_SETTINGS_FILE' before spawning an agy worker." >&2
+      exit 1
+    fi
+    LAUNCH=${LAUNCH//__AGYBIN__/$(shell_quote "$AGY_BIN")}
     ;;
 esac
 
@@ -2743,7 +2893,7 @@ case "$HARNESS" in
 esac
 LAUNCH=${LAUNCH//__WORKTREE__/$sq_worktree}
 case "$HARNESS" in
-  claude|codex|opencode|pi|pi-signed|grok|kimi|muse)
+  claude|codex|opencode|pi|pi-signed|grok|kimi|muse|agy)
     LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS $LAUNCH"
     ;;
 esac
