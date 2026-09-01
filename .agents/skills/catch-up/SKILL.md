@@ -75,7 +75,7 @@ no-mistakes doctor
 ```
 
 Use `no-mistakes doctor`, not `no-mistakes --version`.
-Both are read-only, but `--version` prints only the installed version and suppresses the `A new version of no-mistakes is available: vX -> vY` banner, so it cannot tell you whether no-mistakes is behind at all - and a run that reports "nothing behind" on that basis would silently skip Phase 2 step 4.
+Both are read-only, but `--version` prints only the installed version and suppresses the `A new version of no-mistakes is available: vX -> vY` banner, so it cannot tell you whether no-mistakes is behind at all - and a run that reports "nothing behind" on that basis would silently skip Cleanup's `no-mistakes update`.
 
 Then refresh the two patched clones.
 Present these two commands to the captain verbatim and wait for approval before running either one:
@@ -197,6 +197,12 @@ Splitting an upstream merge into partial merges creates a half-merged tree that 
 Only the live-shared targets need this.
 It is short - land, rebuild, update, smoke test.
 
+This is a brief synchronization point, not a fleet stop.
+It is not an extended halt, it does not pause unrelated fleet work, and it should last minutes.
+All it requires is that no home is mid-dispatch or mid-validation at the moment the quota-axi rebuild swaps the binary and the no-mistakes daemon resets.
+Two shared surfaces are why the check spans every home rather than a narrower set: the quota command is npm-linked into `projects/quota-axi`, so every home reads that one binary at dispatch time, and the no-mistakes validation daemon is a single instance serving every home.
+There is no narrower set of homes to name - those two things are fleet-wide by construction, so an all-homes check is accurate rather than over-broad.
+
 ### Entry gate
 
 All of these must hold before touching anything in this phase:
@@ -212,8 +218,8 @@ All of these must hold before touching anything in this phase:
   A daemon reset mid-run strands a branch in custody.
   The exclusion is this run's own firstmate landing PR once it has reached checks-passed: green-but-unmerged, it does not block entry to this phase, so Phase 2 can proceed while Phase 3 waits on the captain.
   Without that exclusion this gate would never open, since Phase 1 always ends with a green firstmate PR that Phase 3 has not merged yet, and the two phases are deliberately independent.
-  This is the general entry gate and it is the more permissive of the two rules about that PR; step 4's `no-mistakes update` check below is narrower and still treats the same green-but-unmerged PR as in flight.
-  Do not conflate them: passing this gate says nothing about whether step 4 may run.
+  This is the general entry gate and it is the more permissive of the two rules about that PR; Cleanup's `no-mistakes update` check is narrower and still treats the same green-but-unmerged PR as in flight.
+  Do not conflate them: passing this gate says nothing about whether that update may run.
 - Away mode off (`state/.afk` absent).
   Do not do this unattended.
 - The captain is not mid-review in a Lavish session that a `lavish-axi` update would disturb.
@@ -245,13 +251,9 @@ With `yolo` off the captain approves each landing; with it on firstmate lands gr
 3. **npm axi tools** - `npm update -g gh-axi lavish-axi chrome-devtools-axi tasks-axi`.
    Smoke each one (for example `gh-axi repo view`, `tasks-axi list`, and a bare invocation of `lavish-axi` and `chrome-devtools-axi` to confirm each binary still responds) before moving on.
    Never `npm update -g quota-axi` - that would replace our patched clone with the registry copy and destroy our only copy.
-4. **no-mistakes** - before running anything here, confirm there is no active no-mistakes background monitor on this run's own firstmate landing PR, for example with `no-mistakes axi status` for that task.
-   **A green-but-unmerged PR still under background monitoring counts as in flight for this check**, even though its own synchronous gate run already returned checks-passed - that is exactly the case this check exists to catch, because `no-mistakes update` resets the shared daemon and would strand the branch Phase 3 still needs.
-   This is a check on one command, not an ordering rule: Phase 3 is never gated on Phase 2.
-   If the monitor is clear, run `no-mistakes update`, then confirm the daemon came back and `no-mistakes --version` reports the new release.
-   If the monitor is still active, skip this step for this run and finish the other three normally.
-   That is the expected outcome on an ordinary run, not a fault: Phase 1 ends with a green firstmate PR, Phase 3 waits on the captain, and monitoring is simply still on.
-   Tell the captain plainly that the no-mistakes tool update was deferred and why; it runs on a later `/catch-up` once that PR has landed.
+no-mistakes is deliberately not updated here.
+`no-mistakes update` resets the shared daemon, and on an ordinary run this run's own firstmate landing PR is green but unmerged with its background monitor still on, which that reset would strand.
+It runs in Cleanup instead, after Phase 3 has merged that PR and the Phase 1 crewmates are torn down - the genuinely quietest point in the run.
 
 Release the gate and tell the captain what moved.
 
@@ -264,7 +266,8 @@ Separate from Phase 2 and not gated by it.
    The pipeline runs a `rebase` gate agent, and a rebase that linearizes this branch would drop the merge commit before the PR is merged, at which point step 3's `--merge` preserves nothing.
    The check is one ancestry test against the SHA Phase 1 recorded: `git merge-base --is-ancestor <recorded-upstream-sha> <pr-head>` must succeed.
    Use the recorded SHA, never the live `upstream/main` ref, which may have moved since the merge.
-   Read `<pr-head>` as `branch_sync.pipeline.pushed_head` from `no-mistakes axi status` for that task - the commit the PR actually points at - and fetch it first if it is not present locally.
+   Read `<pr-head>` straight from GitHub: `gh-axi api /repos/{owner}/{repo}/pulls/{number} --jq ".head.sha"`, and fetch that commit first if it is not present locally.
+   That is the authoritative, directly checkable source for what the PR actually points at, rather than an internal no-mistakes status field whose path could not be independently confirmed.
    Never test the local `fm/<task-id>` ref: the pipeline-pushed head can be ahead of or different from it, which is the whole reason `no-mistakes axi sync` exists, so a linearization that lives only on the pushed head would pass a check run against the stale local ref.
    Do not test the PR head's own parent count: the pipeline commits its gate fixes on top of the branch, so the head is normally a single-parent fix commit even when the merge is intact deeper in the history.
    If the ancestry test passes, the structure is intact - go to step 3.
@@ -306,6 +309,13 @@ It is the only record of where everything started.
 ## Cleanup
 
 Tear down the Phase 1 crewmates only after their work is landed and smoke-tested.
+
+Then run the no-mistakes update Phase 2 left for here.
+Re-check the conditions rather than assuming they now hold: confirm no active background monitor remains on this run's own firstmate landing PR, and no Phase 1 worker is still live.
+Both are normally satisfied by now, since Phase 3 merged that PR earlier in this run and the teardown just completed, but confirm it rather than inferring it.
+If they hold, run `no-mistakes update`, then confirm the daemon came back and `no-mistakes --version` reports the new release.
+If they still do not hold even here, do not defer a second time - report it to the captain plainly.
+A recurring deferral is the same bug wearing a different hat: it would leave no-mistakes structurally never updated by this skill, and it must never happen silently.
 Leave the `catch-up/pre-*` tags in place; firstmate never removes them.
 An anchor is dropped only by a later run's Phase 1 crewmate, and only after that run's Phase 0 asked the captain and got confirmation that this landing was good and the tag is safe to drop.
 Absent that confirmation the anchor stays, which is the point: it is the last known-good tip of a repo with no remote copy.
