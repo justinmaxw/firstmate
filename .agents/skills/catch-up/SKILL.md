@@ -99,6 +99,16 @@ That list is the acceptance criteria for the merge.
 Every commit in it names a behavior that must still work afterward.
 Write it into the brief; do not make the worker rediscover it.
 
+Also list any anchor left by an earlier run:
+
+```
+git -C projects/<name> tag --list 'catch-up/pre-*'
+```
+
+Report each surviving anchor to the captain and ask whether that run's landing is confirmed good and the tag is safe to drop.
+Nothing deletes an anchor without that confirmation given in the moment.
+Carry the answer into the Phase 1 brief: name the exact tag the crewmate may delete, or say that none may be.
+
 `npm outdated -g` also lists `quota-axi` because of the link - that entry is informational only, never act on it directly (see Phase 2 step 3).
 
 Firstmate's `main..upstream/main` count is an upper bound, not the real backlog: a prior upstream import that was squash-merged carries none of upstream's ancestry even though its content already landed, so every commit it absorbed is counted again - this repo's own `c26e400` ("merge current upstream firstmate into the captain's fork") is exactly that, a single-parent commit.
@@ -119,9 +129,10 @@ One crewmate each.
 The brief must require:
 
 1. Assert the worktree is not the primary clone.
-2. Before merging anything, set the rollback anchor on local `main`, in this order.
-   First delete any surviving `catch-up/pre-*` tag from an earlier run with `git tag -d <tag>`, including one from earlier the same day; reaching this point proves that run landed and no longer needs its anchor, and a same-day leftover would otherwise make the create below fail with `tag already exists`.
-   Then create this run's anchor: `git tag catch-up/pre-$(date +%y%m%d) main`.
+2. Before merging anything, set the rollback anchor on local `main`: `git tag catch-up/pre-$(date +%y%m%d) main`.
+   If Phase 0 reported a surviving prior-run anchor and the captain confirmed in that moment that it is good and safe to drop, delete exactly that tag first with `git tag -d <tag>`; otherwise leave every existing anchor alone.
+   Never delete an anchor the captain has not confirmed - a prior anchor is the last known-good tip of a repo whose commits have no remote copy, and a run reaching this point proves nothing about whether the previous run's landing was actually good.
+   If the create collides with a same-day tag the captain did not confirm, stop and ask rather than deleting it.
    Name `main` explicitly.
    A fresh spawn worktree's own HEAD is `origin/<default>` - the spawn path hard-resets it there - so a bare `git tag` would anchor upstream's tip and none of our commits, and the rollback below would then destroy the only copy of the patches.
    The worktree resolves the shared `main` ref regardless of where its own HEAD sits, so naming it anchors local `main`'s real tip.
@@ -172,10 +183,12 @@ It is short - land, rebuild, update, smoke test.
 
 All of these must hold before touching anything in this phase:
 
-- No live crewmate in **any** home other than this run's own Phase 1 workers - the main home and every registered secondmate home in `data/secondmates.md`.
+- No live crewmate anywhere, checked across the main home and every registered secondmate home in `data/secondmates.md`, with one exclusion.
   Check each home's task records, not just this one's.
-  This run's own quota-axi, baby-menu, and firstmate crewmates do not count against the gate: they are expected to be sitting finished on ready branches right now, and Cleanup deliberately keeps them alive until Phase 2 has landed and smoke-tested their work.
-  Every other worker anywhere does count and must be absent.
+  The exclusion is this run's own Phase 1 workers - the quota-axi, baby-menu, and firstmate crewmates - and it applies to a worker only once it is confirmed done on a clean ready branch, reconciled against its current state the same way you would check any worker, not merely inferred from the absence of a wake.
+  A confirmed-done Phase 1 worker is expected to still be here: Cleanup deliberately keeps it alive until Phase 2 has landed and smoke-tested its work, so its presence is not a disturbance.
+  A Phase 1 worker that has not reported done blocks the gate exactly like a foreign worker, because landing a half-resolved merge would fast-forward local `main` onto it and, for quota-axi, ship that broken build to every home.
+  Every other worker anywhere blocks the gate and must be absent.
   Do not re-tighten this into "no crewmate at all" - that gate can never open on a run that had work to do.
 - No no-mistakes validation run in flight anywhere.
   A daemon reset mid-run strands a branch in custody.
@@ -213,14 +226,20 @@ Release the gate and tell the captain what moved.
 Separate from Phase 2 and not gated by it.
 
 1. Captain approves the PR merge (standing `yolo` does not cover this - it changes every home's instructions).
-2. Merge with an explicit non-squash method: `bin/fm-pr-merge.sh <id> <pr url> -- --merge`.
+2. Before merging, confirm the PR head still carries the upstream merge as a real merge commit.
+   The pipeline runs a `rebase` gate agent, and a rebase that linearizes this branch would drop the merge commit before the PR is merged, at which point step 3's `--merge` preserves nothing.
+   Check the actual history of the PR head: `git merge-base --is-ancestor upstream/main <pr-head>` must succeed, and the head's merge commit must still have two parents (`git rev-list --parents -n 1 <pr-head>`, or walk back to the merge commit and read its parents).
+   If both hold, the structure is intact - go to step 3.
+   If either fails, the branch was linearized somewhere in the pipeline: stop, do not merge, and re-run the landing with the rebase step skipped - `no-mistakes axi run --skip=rebase` (`--skip` takes comma-separated pipeline steps).
+   Re-check this step on the new PR head before merging.
+3. Merge with an explicit non-squash method: `bin/fm-pr-merge.sh <id> <pr url> -- --merge`.
    This PR's content is a real `git merge upstream/main`, and `bin/fm-pr-merge.sh` squashes on GitHub when the caller names no method, which would flatten that merge and drop `upstream/main` from `main`'s ancestry - leaving the next catch-up run's behind-count wrong and its merge re-applying commits we already have.
    That flag is for this landing PR only; it says nothing about how other PRs in this repo should merge.
-3. Run `/updatefirstmate`.
+4. Run `/updatefirstmate`.
    That path fast-forwards this home and every secondmate home, skips any home that is not a clean fast-forward, never touches gitignored operational dirs, and nudges each updated home to re-read its instructions.
    It is safe with secondmates running, which is why we use it instead of hand-rolling the propagation.
-4. Re-read `AGENTS.md` in this session and restart supervision - `bin/` changed underneath the running session.
-5. Report any home `/updatefirstmate` skipped; a skipped home is still on the old instructions.
+5. Re-read `AGENTS.md` in this session and restart supervision - `bin/` changed underneath the running session.
+6. Report any home `/updatefirstmate` skipped; a skipped home is still on the old instructions.
 
 ## Rollback
 
@@ -247,5 +266,6 @@ It is the only record of where everything started.
 
 Tear down the Phase 1 crewmates only after their work is landed and smoke-tested.
 Leave the `catch-up/pre-*` tags in place; firstmate never removes them.
-The next catch-up run's Phase 1 crewmate deletes this anchor as its first action, at the moment it creates its own, so the anchor survives every step of this run and is cleared only once a later run starts from a landed tree.
+An anchor is dropped only by a later run's Phase 1 crewmate, and only after that run's Phase 0 asked the captain and got confirmation that this landing was good and the tag is safe to drop.
+Absent that confirmation the anchor stays, which is the point: it is the last known-good tip of a repo with no remote copy.
 Append the "ours" commit lists to nothing - they are re-derivable, and stale copies rot.
