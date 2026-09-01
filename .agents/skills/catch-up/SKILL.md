@@ -50,8 +50,10 @@ If the second hop is not that symlink, the chain is broken, quota-axi is no long
 ### The two clones firstmate cannot refresh or rebuild on its own
 
 quota-axi and baby-menu are registered `local-only` in `data/projects.md` and their `origin` is upstream itself.
-For a clone shaped that way, firstmate has no sanctioned automatic path to fetch upstream state, and none to rebuild the live checkout after a landing.
+For a clone shaped that way, firstmate has no sanctioned path it can deliberately invoke to fetch upstream state for recon, and none to rebuild the live checkout after a landing.
 `bin/fm-fleet-sync.sh` cannot serve either purpose: it returns `skipped: local-only project` before it ever fetches, for any project registered `local-only`, so it is not a viable recon path for these two clones.
+One fetch does happen on its own, though, and it matters below: `bin/fm-spawn.sh` runs `freshen_spawn_worktree_base` on every ordinary non-relaunch crewmate spawn, which fetches `origin` for the spawned worktree - and that worktree shares the patched clone's ref store, so dispatching a Phase 1 crewmate advances `origin/main` in the clone itself.
+That is a side effect of dispatch, not a recon path firstmate may reach for, which is exactly why Phase 0 records the pre-dispatch SHA.
 Do not engineer around this with a new script or a scout dispatch.
 Where this skill needs a `projects/` command firstmate cannot otherwise run, it names that command and asks the captain for approval in the moment.
 Those points are enumerated, not counted: Phase 0's two fetches (`projects/quota-axi` and `projects/baby-menu`), Phase 2 step 2's quota-axi rebuild, and Rollback's reset and its follow-up rebuild.
@@ -122,6 +124,10 @@ Firstmate's `main..upstream/main` count is an upper bound, not the real backlog:
 Skim `git log --oneline main..upstream/main` - the same direction as the behind-count itself - and report what is genuinely new rather than trusting the raw number, and expect the first merge after a flattened import to be a full re-import rather than a routine one.
 Repairing that history is separate work on `main` and out of scope for this skill.
 
+For each patched clone, also record `origin/main`'s current SHA (`git -C projects/<name> rev-parse origin/main`) next to its behind-count.
+Record it because dispatch itself refreshes origin: the spawn-time fetch above can advance `origin/main` between this report and the crewmate's actual merge, so a behind-count alone is a floor rather than an exact figure, and only the recorded SHA makes that drift visible.
+This is the same pinning the firstmate leg already does for `upstream/main` in Phase 1 step 2; do not drop it as redundant with the count.
+
 Report a plain table to the captain: target, commits behind, commits ours, and whether it is live-shared.
 If nothing is behind anywhere, say so and stop - there is no Phase 1.
 
@@ -151,6 +157,7 @@ The brief must require:
    Name the dispatched task `<name>-catch-up-<yymmdd>` so that branch reads as `fm/<name>-catch-up-<yymmdd>`; the landing step below looks up `fm/<task-id>` and nothing else, so the two must agree.
 4. `git merge origin/main` - a merge, never a rebase.
    Rebase rewrites our only copy of our commits; merge preserves them.
+   Report the exact SHA of `origin/main` that was merged, not just that the merge happened, so any drift from the SHA Phase 0 recorded shows up in the crewmate's own report instead of being absorbed silently.
 5. Resolve conflicts by keeping our behavior and adopting upstream's structure.
    When upstream restructured a file our patch lives in, port the patch onto the new structure rather than reverting either side.
 6. Build, test, and lint on the project's own scripts.
