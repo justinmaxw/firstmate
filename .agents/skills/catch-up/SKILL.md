@@ -56,7 +56,7 @@ One fetch does happen on its own, though, and it matters below: `bin/fm-spawn.sh
 That is a side effect of dispatch, not a recon path firstmate may reach for, which is exactly why Phase 0 records the pre-dispatch SHA.
 Do not engineer around this with a new script or a scout dispatch.
 Where this skill needs a `projects/` command firstmate cannot otherwise run, it names that command and asks the captain for approval in the moment.
-Those points are enumerated, not counted: Phase 0's two fetches (`projects/quota-axi` and `projects/baby-menu`), Phase 2 step 2's quota-axi rebuild, and Rollback's reset and its follow-up rebuild.
+Those points are enumerated, not counted: Phase 0's two fetches (`projects/quota-axi` and `projects/baby-menu`), Phase 2 step 2's quota-axi rebuild, Rollback's reset and its follow-up rebuild, and Cleanup's anchor-tag drop.
 Each one names its literal command, asks fresh for that specific run, grants no standing authority, and never carries over to another command, another clone, or a future run.
 
 ## Phase 0 - Recon
@@ -108,16 +108,6 @@ That list is the acceptance criteria for the merge.
 Every commit in it names a behavior that must still work afterward.
 Write it into the brief; do not make the worker rediscover it.
 
-Also list any anchor left by an earlier run:
-
-```
-git -C projects/<name> tag --list 'catch-up/pre-*'
-```
-
-Report each surviving anchor to the captain and ask whether that run's landing is confirmed good and the tag is safe to drop.
-Nothing deletes an anchor without that confirmation given in the moment.
-Carry the answer into the Phase 1 brief: name the exact tag the crewmate may delete, or say that none may be.
-
 `npm outdated -g` also lists `quota-axi` because of the link - that entry is informational only, never act on it directly (see Phase 2 step 3).
 
 Firstmate's `main..upstream/main` count is an upper bound, not the real backlog: a prior upstream import that was squash-merged carries none of upstream's ancestry even though its content already landed, so every commit it absorbed is counted again - this repo's own `c26e400` ("merge current upstream firstmate into the captain's fork") is exactly that, a single-parent commit.
@@ -143,9 +133,8 @@ The brief must require:
 
 1. Assert the worktree is not the primary clone.
 2. Before merging anything, set the rollback anchor on local `main`: `git tag catch-up/pre-$(date +%y%m%d) main`.
-   If Phase 0 reported a surviving prior-run anchor and the captain confirmed in that moment that it is good and safe to drop, delete exactly that tag first with `git tag -d <tag>`; otherwise leave every existing anchor alone.
-   Never delete an anchor the captain has not confirmed - a prior anchor is the last known-good tip of a repo whose commits have no remote copy, and a run reaching this point proves nothing about whether the previous run's landing was actually good.
-   If the create collides with a same-day tag the captain did not confirm, stop and ask rather than deleting it.
+   Never delete an existing anchor here; the crewmate only creates.
+   Each run's own Cleanup drops its own anchor, so a leftover from an earlier run means that run's anchor was never confirmed - if the create collides with it, stop and ask rather than deleting it.
    Name `main` explicitly.
    A fresh spawn worktree's own HEAD is `origin/<default>` - the spawn path hard-resets it there - so a bare `git tag` would anchor upstream's tip and none of our commits, and the rollback below would then destroy the only copy of the patches.
    The worktree resolves the shared `main` ref regardless of where its own HEAD sits, so naming it anchors local `main`'s real tip.
@@ -198,8 +187,9 @@ Only the live-shared targets need this.
 It is short - land, rebuild, update, smoke test.
 
 This is a brief synchronization point, not a fleet stop.
-It is not an extended halt, it does not pause unrelated fleet work, and it should last minutes.
-All it requires is that no home is mid-dispatch or mid-validation at the moment the quota-axi rebuild swaps the binary and the no-mistakes daemon resets.
+It is not an extended halt, and it should last minutes.
+It waits for the moment every home is idle rather than forcing one: nothing is killed to open it, and the run holds until the gate below holds on its own.
+Read that gate literally - a live crewmate blocks whatever it happens to be doing, not only one that is mid-dispatch or mid-validation.
 Two shared surfaces are why the check spans every home rather than a narrower set: the quota command is npm-linked into `projects/quota-axi`, so every home reads that one binary at dispatch time, and the no-mistakes validation daemon is a single instance serving every home.
 There is no narrower set of homes to name - those two things are fleet-wide by construction, so an all-homes check is accurate rather than over-broad.
 
@@ -320,7 +310,26 @@ Those two are normally satisfied by now, since Phase 3 merged that PR earlier in
 If the full gate holds, run `no-mistakes update`, then confirm the daemon came back and `no-mistakes --version` reports the release Phase 0 named.
 If it does not hold even here, do not defer a second time - report to the captain plainly which condition blocked it.
 A recurring deferral is the same bug wearing a different hat: it would leave no-mistakes structurally never updated by this skill, and it must never happen silently.
-Leave the `catch-up/pre-*` tags in place; firstmate never removes them.
-An anchor is dropped only by a later run's Phase 1 crewmate, and only after that run's Phase 0 asked the captain and got confirmation that this landing was good and the tag is safe to drop.
-Absent that confirmation the anchor stays, which is the point: it is the last known-good tip of a repo with no remote copy.
+Then drop this run's rollback anchors, in this run - not deferred to a later one.
+For each patched clone, present the literal command to the captain - `git -C projects/<name> tag -d catch-up/pre-<date>` - and ask whether the new state is good.
+Delete only on that confirmation, exactly that tag, and nothing else.
+This is the same named-command treatment as the other approval points: `/catch-up` is not the approval, it is given in the moment for this run, it grants no standing authority, and it never carries over.
+If the captain says no or does not answer, the anchor stays.
+That is a fine outcome, not a failure - the anchor is the last known-good tip of a repo with no remote copy, and asking is the safeguard.
 Append the "ours" commit lists to nothing - they are re-derivable, and stale copies rot.
+
+## Deviations from the draft
+
+This skill differs from the captain-approved draft at `data/firstmate-catch-up-skill-260901/draft-SKILL.md` in five places.
+Each is a deliberate correction discovered during review, not an oversight - do not silently revert any of them back toward the draft's original text.
+
+- **In-the-moment named-command captain approval** for every `projects/` command firstmate runs itself: Phase 0's two fetches, Phase 2's rebuild, Rollback's reset, and Cleanup's tag drop.
+  The draft assumed these needed no gate, but hard rule 1 requires a sanctioned owner for any state-changing command under `projects/`, and none of these had one - a fetch writes refs there too.
+- **The rollback anchor tag is created by the dispatched crewmate inside its own worktree**, not by firstmate before dispatch.
+  Same hard-rule-1 requirement: a crewmate may change a project, firstmate may not.
+- **Phase 3's merge-commit ancestry verification and its abandon-and-restart remedy**, which the draft did not have.
+  Review found the no-mistakes pipeline's own `rebase` step could linearize the upstream merge commit before it ever reaches GitHub, silently undoing the draft's own squash-avoidance intent.
+- **Recording the exact merged commit SHA** - for firstmate against `upstream`, and for each patched clone against its `origin` - rather than trusting a live commit count.
+  Dispatching a crewmate itself triggers an automatic origin fetch (`bin/fm-spawn.sh`), so a count taken during Phase 0 can go stale before the crewmate actually merges.
+- **The `no-mistakes update` step moved from Phase 2 to Cleanup.**
+  In its original Phase 2 position it could never actually run, because Phase 1 always leaves this run's own firstmate PR under active monitoring at that point.
