@@ -16,6 +16,7 @@ Discovery is by this skill's own frontmatter description alone.
 There is deliberately no pointer in `AGENTS.md`, matching bearings and ahoy, and deliberately no row in `README.md`'s user-invocable skills table.
 Two reasons for the README omission, the second decisive: this skill is fork-specific - it names kunchenguid, `projects/quota-axi`, `projects/baby-menu`, and this fleet's own layout - so a public template installer gains nothing from the pointer; and `README.md` arrives from upstream on every sync, so a fork-only row there becomes a merge conflict on every future upstream merge, in the very file this skill exists to help merge.
 Discoverability alone would argue for adding the row; the recurring conflict is what settles it.
+This skill is not the away-mode return catch-up gate: that is `bin/fm-afk-return.sh`, which presents the captain's return catch-up and holds work until its gate clears, and it shares only the word.
 One file outside this skill changed with it: `.agents/skills/bearings/SKILL.md`'s description gave up the bare `catch-up` trigger token for the conversational `"catch me up"`, so that token no longer matches two unrelated skills once `/catch-up` exists.
 
 Two rules govern everything below.
@@ -207,7 +208,8 @@ All of these must hold before touching anything in this phase:
 
 - No live crewmate anywhere, checked across the main home and every registered secondmate home in `data/secondmates.md`, with one exclusion.
   Check each home's task records, not just this one's.
-  The exclusion is this run's own Phase 1 workers - the quota-axi, baby-menu, and firstmate crewmates - and it applies to a worker only once it is confirmed done on a clean ready branch, reconciled against its current state the same way you would check any worker, not merely inferred from the absence of a wake.
+  The exclusion is this run's own Phase 1 workers, and it applies to a worker only once that worker is confirmed done in its own terms, reconciled against its current state the same way you would check any worker, not merely inferred from the absence of a wake.
+  The three legs have three different done-states, so check each against its own: the quota-axi and baby-menu crewmates are done on a clean ready branch, and the firstmate crewmate is done on a green PR with checks passed - that is what Phase 1 step 5 asks of it, and it never reaches a ready branch, so holding it to the local-only legs' done-state would block the gate forever.
   A confirmed-done Phase 1 worker is expected to still be here: Cleanup deliberately keeps it alive until Phase 2 has landed and smoke-tested its work, so its presence is not a disturbance.
   A Phase 1 worker that has not reported done blocks the gate exactly like a foreign worker, because landing a half-resolved merge would fast-forward local `main` onto it and, for quota-axi, ship that broken build to every home.
   Every other worker anywhere blocks the gate and must be absent.
@@ -275,6 +277,9 @@ Separate from Phase 2 and not gated by it.
    That branch is abandoned, not repaired - a commit that no longer exists cannot be recovered by re-running anything on the same branch, and `--skip=rebase` on an already-linearized branch is inert.
    Stop, do not merge, abandon the branch and its PR, have the firstmate worker re-branch fresh from local `main`, redo `git merge upstream/main` (recording the newly merged SHA as in Phase 1 step 2), and start an entirely new pipeline run for that fresh branch with `no-mistakes axi run --skip=rebase --intent ...` (`--skip` takes comma-separated pipeline steps; `--intent` is required to start a run).
    Never a bare re-run or a fix attempt on the branch that already lost the merge.
+   `no-mistakes axi run --help` states the opposite as its general rule - commit post-pipeline follow-up on top of the existing branch, never abort-and-restart, reset, or replace it in a way that drops prior gate-fix commits - and this step is a narrow, deliberate exception to exactly that rule.
+   The reason it does not apply here: that rule assumes the branch can still be brought to a correct state, and a merge commit the rebase step destroyed no longer exists on it, so there is nothing on that branch to build the follow-up on.
+   The exception covers this case and no other; everywhere else the general rule stands, and gate-fix commits are never dropped to save effort.
    Re-check this step on the new PR head before merging.
 3. Merge with an explicit non-squash method: `bin/fm-pr-merge.sh <id> <pr url> -- --merge`.
    This PR's content is a real `git merge upstream/main`, and `bin/fm-pr-merge.sh` squashes on GitHub when the caller names no method, which would flatten that merge and drop `upstream/main` from `main`'s ancestry - leaving the next catch-up run's behind-count wrong and its merge re-applying commits we already have.
