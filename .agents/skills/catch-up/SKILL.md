@@ -17,7 +17,7 @@ There is deliberately no pointer in `AGENTS.md`, matching bearings and ahoy, and
 Two reasons for the README omission, the second decisive: this skill is fork-specific - it names kunchenguid, `projects/quota-axi`, `projects/baby-menu`, and this fleet's own layout - so a public template installer gains nothing from the pointer; and `README.md` arrives from upstream on every sync, so a fork-only row there becomes a merge conflict on every future upstream merge, in the very file this skill exists to help merge.
 Discoverability alone would argue for adding the row; the recurring conflict is what settles it.
 This skill is not the away-mode return catch-up gate: that is `bin/fm-afk-return.sh`, which presents the captain's return catch-up and holds work until its gate clears, and it shares only the word.
-One file outside this skill changed with it: `.agents/skills/bearings/SKILL.md`'s description gave up the bare `catch-up` trigger token for the conversational `"catch me up"`, so that token no longer matches two unrelated skills once `/catch-up` exists.
+One file outside this skill changed with it, reviewed and accepted as part of this change rather than unreviewed drift: `.agents/skills/bearings/SKILL.md`'s description gave up the bare `catch-up` trigger token for the conversational `"catch me up"`, so that token no longer matches two unrelated skills once `/catch-up` exists.
 
 Two rules govern everything below.
 
@@ -268,7 +268,7 @@ Separate from Phase 2 and not gated by it.
    The pipeline runs a `rebase` gate agent, and a rebase that linearizes this branch would drop the merge commit before the PR is merged, at which point step 3's `--merge` preserves nothing.
    The check is one ancestry test against the SHA Phase 1 recorded: `git merge-base --is-ancestor <recorded-upstream-sha> <pr-head>` must succeed.
    Use the recorded SHA, never the live `upstream/main` ref, which may have moved since the merge.
-   Read `<pr-head>` straight from GitHub: `gh-axi api /repos/{owner}/{repo}/pulls/{number} --jq ".head.sha"`, and fetch that commit first if it is not present locally.
+   Read `<pr-head>` straight from GitHub: `gh-axi api /repos/{owner}/{repo}/pulls/<pr-number> --jq ".head.sha"`, and fetch that commit first if it is not present locally.
    That is the authoritative, directly checkable source for what the PR actually points at, rather than an internal no-mistakes status field whose path could not be independently confirmed.
    Never test the local `fm/<task-id>` ref: the pipeline-pushed head can be ahead of or different from it, which is the whole reason `no-mistakes axi sync` exists, so a linearization that lives only on the pushed head would pass a check run against the stale local ref.
    Do not test the PR head's own parent count: the pipeline commits its gate fixes on top of the branch, so the head is normally a single-parent fix commit even when the merge is intact deeper in the history.
