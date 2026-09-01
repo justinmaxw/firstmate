@@ -300,8 +300,10 @@ It is the only record of where everything started.
 
 Tear down the Phase 1 crewmates only after their work is landed and smoke-tested.
 
-Then run the no-mistakes update, but only if Phase 0 reported no-mistakes behind and Phase 2 deferred it for here.
-If Phase 0 found it already current there is nothing deferred and nothing to run - do not reset the shared daemon for no reason.
+Then run the no-mistakes update, if and only if Phase 0 reported no-mistakes behind.
+That is the whole precondition - do not also require that Phase 2 deferred it, because on a run where the other live-shared targets were already current Phase 2 has no work at all and never reaches its deferral, which would strand this step permanently.
+If Phase 0 found no-mistakes already current there is nothing to run - do not reset the shared daemon for no reason.
+The step lives here rather than in Phase 2 only because Phase 1 always leaves this run's own firstmate PR under active monitoring at that earlier point; that is an explanation of placement, not a second gate.
 
 That reset is still the same fleet-wide hazard it was in Phase 2, and Phase 2's gate was released before this point, so re-assert the full Phase 2 entry gate here rather than only the conditions specific to this run.
 All four bullets must hold again: no live crewmate in any home including every registered secondmate home, no no-mistakes validation run in flight anywhere in the fleet - a foreign home's run counts and a reset would strand its branch in custody - away mode off, and no active Lavish review the update would disturb.
@@ -320,8 +322,8 @@ Append the "ours" commit lists to nothing - they are re-derivable, and stale cop
 
 ## Deviations from the draft
 
-This skill differs from the captain-approved draft at `data/firstmate-catch-up-skill-260901/draft-SKILL.md` in five places.
-Each is a deliberate correction discovered during review, not an oversight - do not silently revert any of them back toward the draft's original text.
+The list below enumerates every deliberate deviation from the captain-approved draft at `data/firstmate-catch-up-skill-260901/draft-SKILL.md`.
+Each is a correction discovered during review, not an oversight - do not silently revert any of them back toward the draft's original text.
 
 - **In-the-moment named-command captain approval** for every `projects/` command firstmate runs itself: Phase 0's two fetches, Phase 2's rebuild, Rollback's reset, and Cleanup's tag drop.
   The draft assumed these needed no gate, but hard rule 1 requires a sanctioned owner for any state-changing command under `projects/`, and none of these had one - a fetch writes refs there too.
@@ -333,3 +335,16 @@ Each is a deliberate correction discovered during review, not an oversight - do 
   Dispatching a crewmate itself triggers an automatic origin fetch (`bin/fm-spawn.sh`), so a count taken during Phase 0 can go stale before the crewmate actually merges.
 - **The `no-mistakes update` step moved from Phase 2 to Cleanup.**
   In its original Phase 2 position it could never actually run, because Phase 1 always leaves this run's own firstmate PR under active monitoring at that point.
+- **Phase 3 passes an explicit `-- --merge` to `bin/fm-pr-merge.sh`**, where the draft's call was bare.
+  That script defaults to `--squash` on GitHub when no method is named, which would flatten the upstream merge commit and drop its ancestry - a behavior change, not a wording one.
+- **Phase 0 runs `no-mistakes doctor` instead of the draft's `no-mistakes --version`.**
+  `doctor` prints the upgrade-available banner that `--version` suppresses, and that banner is what decides whether Cleanup's update ever runs.
+- **Rollback's reset undoes a landing already in the primary clone**, where the draft framed it as undoing on the branch.
+  `bin/fm-merge-local.sh` fast-forwards local `main` directly, so by rollback time the change is in the clone, not on a branch.
+- **The crewmate branch is mandated as exactly `fm/<task-id>`**, where the draft named a branch string directly.
+  `bin/fm-merge-local.sh` derives the branch from the task id alone and can never find any other name.
+- **quota-axi is rebuilt with `pnpm run build`**, not the draft's `npm run build`.
+  The project is pnpm-managed, and npm would leave a stray `node_modules` in the very clone the global command symlinks into.
+
+One file outside this skill changed with it: `.agents/skills/bearings/SKILL.md`'s description gave up the bare `catch-up` trigger token for the conversational `"catch me up"`, so that token no longer matches two unrelated skills once `/catch-up` exists.
+Nothing else in bearings changed.
