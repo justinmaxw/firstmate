@@ -64,7 +64,7 @@ That is a side effect of dispatch, not a recon path firstmate may reach for, whi
 Do not engineer around this with a new script or a scout dispatch.
 Where this skill needs a `projects/` command firstmate cannot otherwise run, it names that command and asks the captain for approval in the moment.
 Hard rule 1 requires a sanctioned owner for any state-changing command under `projects/`, and none of these has one - a fetch writes refs there too - so the captain's in-the-moment approval of that one named command is the owner.
-Those points are enumerated, not counted: Phase 0's two fetches (`projects/quota-axi` and `projects/baby-menu`), Phase 2 step 2's quota-axi rebuild, Rollback's reset and its follow-up rebuild, and Cleanup's anchor-tag drop.
+Those points are enumerated, not counted: Phase 0's two fetches (`projects/quota-axi` and `projects/baby-menu`), Phase 2 step 2's quota-axi dependency install and its rebuild, Rollback's reset and its follow-up rebuild, and Cleanup's anchor-tag drop.
 Each one names its literal command, asks fresh for that specific run, grants no standing authority, and never carries over to another command, another clone, or a future run.
 
 ## Phase 0 - Recon
@@ -237,19 +237,27 @@ With `yolo` off the captain approves each landing; with it on firstmate lands gr
 1. **baby-menu** - land with `bin/fm-merge-local.sh`.
    Nothing else depends on it.
    (This one does not actually need the gate; it can also land at the end of Phase 1.)
-2. **quota-axi** - land with `bin/fm-merge-local.sh`, then rebuild the clone.
+2. **quota-axi** - land with `bin/fm-merge-local.sh`, then install dependencies from the merged lockfile and rebuild the clone.
    The landing leaves `dist/` stale, and the primary clone's `dist/` is what the global symlink resolves to, so the rebuild has to happen there and nowhere else - a crewmate worktree's `dist/` is not what the global command reads, which is why the Phase 1 brief tells the crewmate to leave the live `dist/` alone.
-   Present the rebuild command to the captain verbatim - `pnpm run build`, run in `projects/quota-axi` - and wait for approval.
-   It rewrites `dist/` under `projects/`, which hard rule 1 gives firstmate no standing owner for, so this ask is what authorizes it.
+   Two commands run here, and each is its own named approval point - approving the install never carries into the build.
+   Present the first verbatim - `pnpm install --frozen-lockfile`, run in `projects/quota-axi` - and wait for approval.
+   The install is not optional tidying: the merge can add a runtime dependency the primary clone's `node_modules` has never had, and the Phase 1 crewmate's build proves nothing about it, because that build ran in a separate worktree with its own `node_modules`.
+   `--frozen-lockfile` installs exactly what the merged lockfile pins and fails rather than rewriting it.
+   Then present the second verbatim - `pnpm run build`, run in `projects/quota-axi` - and wait for approval again.
+   Both write state under `projects/` - `node_modules/` and `dist/` - which hard rule 1 gives firstmate no standing owner for, so each ask is what authorizes its own command.
    Use `pnpm`, not `npm`: the project is pnpm-managed, and npm would leave a stray `node_modules` in the very clone the global command symlinks into.
-   On approval run exactly that one command and nothing else.
+   On approval run exactly those two commands and nothing else.
    Invoking `/catch-up` is not that approval.
-   It is given in the moment, for this run, for that one command; it grants no standing authority, and it never carries over to another command, another clone, or a future run.
+   Each is given in the moment, for this run, for that one command; it grants no standing authority, and it never carries over to another command, another clone, or a future run.
    Every run asks again.
-   Then immediately smoke the *global* command: `quota-axi` must return real data.
+   If either command exits non-zero, stop the run there and report the failure to the captain.
+   Do not run the smoke check, do not move on to step 3, and do not report quota-axi as updated - a failed install or build leaves the pre-merge `dist/` in place, and that is what every home's global command still resolves to.
+   Then smoke the *global* command, and assert two things, not one: `quota-axi` must return real data, and the newest file under `projects/quota-axi/dist/` must be newer than the landing commit (`git -C projects/quota-axi log -1 --format=%cd main`).
+   The data assertion alone cannot distinguish a successful rebuild from a failed one, because the stale pre-merge `dist/` answers it just as well - which is exactly how a merge that added a runtime dependency would leave every home running pre-merge code while this run reported quota-axi updated.
+   Keep both assertions; do not simplify this back to "the command answers".
    The npm link means a broken build breaks dispatch for every home.
-   Do not proceed until it answers.
-   If the smoke fails, go straight to Rollback for the approval-gated recovery: reset the clone to the `catch-up/pre-<date>` anchor, then re-run the approved rebuild.
+   Do not proceed until both hold.
+   If either fails, go straight to Rollback for the approval-gated recovery: reset the clone to the `catch-up/pre-<date>` anchor, then re-run the approved install and rebuild.
 3. **npm axi tools** - `npm update -g gh-axi lavish-axi chrome-devtools-axi tasks-axi`.
    Smoke each one (for example `gh-axi repo view`, `tasks-axi list`, and a bare invocation of `lavish-axi` and `chrome-devtools-axi` to confirm each binary still responds) before moving on.
    Never `npm update -g quota-axi` - that would replace our patched clone with the registry copy and destroy our only copy.
@@ -303,8 +311,9 @@ Separate from Phase 2 and not gated by it.
   Capture it - that column is the rollback record.
   This bullet covers `gh-axi`, `lavish-axi`, `chrome-devtools-axi`, and `tasks-axi` only.
   quota-axi is not an npm tool for rollback purposes even though `npm outdated -g` lists it: `npm install -g quota-axi@<version>` would replace the symlink into `projects/quota-axi` with the registry copy and destroy our only copy of the patches, exactly as `npm update -g quota-axi` would.
-  Roll quota-axi back through the `catch-up/pre-<date>` tag above, then rebuild the clone with `pnpm run build` in `projects/quota-axi` - never through npm.
-  That rebuild is its own named approval point, not something the reset's approval covers: it is a second `projects/` write with no standing owner, so present the literal command, wait for approval in the moment for this run, and take no standing authority from it.
+  Roll quota-axi back through the `catch-up/pre-<date>` tag above, then restore the clone with `pnpm install --frozen-lockfile` and `pnpm run build` in `projects/quota-axi` - never through npm.
+  The install belongs here too, because Phase 2's install may have written `node_modules` from the merged lockfile that the reset just undid.
+  Each of those two commands is its own named approval point, not something the reset's approval covers: they are further `projects/` writes with no standing owner, so present each literal command, wait for approval in the moment for this run, and take no standing authority from it.
 - no-mistakes: reinstall the prior release; the update is not reversible in place.
 - firstmate: revert the merge PR, then `/updatefirstmate` again to propagate the revert.
 
