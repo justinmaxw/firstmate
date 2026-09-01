@@ -310,11 +310,15 @@ It is the only record of where everything started.
 
 Tear down the Phase 1 crewmates only after their work is landed and smoke-tested.
 
-Then run the no-mistakes update Phase 2 left for here.
-Re-check the conditions rather than assuming they now hold: confirm no active background monitor remains on this run's own firstmate landing PR, and no Phase 1 worker is still live.
-Both are normally satisfied by now, since Phase 3 merged that PR earlier in this run and the teardown just completed, but confirm it rather than inferring it.
-If they hold, run `no-mistakes update`, then confirm the daemon came back and `no-mistakes --version` reports the new release.
-If they still do not hold even here, do not defer a second time - report it to the captain plainly.
+Then run the no-mistakes update, but only if Phase 0 reported no-mistakes behind and Phase 2 deferred it for here.
+If Phase 0 found it already current there is nothing deferred and nothing to run - do not reset the shared daemon for no reason.
+
+That reset is still the same fleet-wide hazard it was in Phase 2, and Phase 2's gate was released before this point, so re-assert the full Phase 2 entry gate here rather than only the conditions specific to this run.
+All four bullets must hold again: no live crewmate in any home including every registered secondmate home, no no-mistakes validation run in flight anywhere in the fleet - a foreign home's run counts and a reset would strand its branch in custody - away mode off, and no active Lavish review the update would disturb.
+Confirm as part of that gate that no active background monitor remains on this run's own firstmate landing PR and no Phase 1 worker is still live.
+Those two are normally satisfied by now, since Phase 3 merged that PR earlier in this run and the teardown just completed, but confirm rather than infer, and never let them stand in for the other three.
+If the full gate holds, run `no-mistakes update`, then confirm the daemon came back and `no-mistakes --version` reports the release Phase 0 named.
+If it does not hold even here, do not defer a second time - report to the captain plainly which condition blocked it.
 A recurring deferral is the same bug wearing a different hat: it would leave no-mistakes structurally never updated by this skill, and it must never happen silently.
 Leave the `catch-up/pre-*` tags in place; firstmate never removes them.
 An anchor is dropped only by a later run's Phase 1 crewmate, and only after that run's Phase 0 asked the captain and got confirmation that this landing was good and the tag is safe to drop.
