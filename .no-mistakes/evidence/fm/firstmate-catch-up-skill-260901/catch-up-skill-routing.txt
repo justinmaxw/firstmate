@@ -1,0 +1,21 @@
+Here are the verbatim entries from the available-skills listing:
+
+**catch-up**
+> catch-up: Pull kunchenguid's upstream changes into every forked or locally patched tool this fleet depends on - firstmate, quota-axi, baby-menu, the npm axi tools, and no-mistakes - while preserving our own local changes. Use when the captain invokes /catch-up, asks to update the open source tools, asks to pull in kunchenguid's changes, or asks how far behind upstream we are.
+
+**bearings**
+> bearings: Generate a "pick up where I left off" fleet digest from firstmate's live fleet state. Use when the captain invokes /bearings or asks for a bearings report, morning brief, status report, "catch me up", "where did I leave off", or "what's in the works". Plain /bearings is chat-only by default, /bearings file explicitly writes the dated data/status-report-<YYYY-MM-DD>.md artifact, and /bearings lavish additionally builds and arms the interactive fleet board; live PR enrichment remains opt-in and composes with the other modes. Also load this skill's board-wake handling when a procevent lavish wake's source id matches the canonical source id of the stable bearings board path.
+
+Now the routing for each captain message:
+
+**(a) "update the open source tools"** → **catch-up**
+Matched words: *"asks to update the open source tools"*
+
+**(b) "how far behind upstream are we?"** → **catch-up**
+Matched words: *"or asks how far behind upstream we are"*
+
+**(c) "catch me up"** → **bearings**
+Matched words: *"catch me up"* — this phrase appears verbatim (in quotes) in the **bearings** description, not the catch-up one. Despite the surface similarity to the skill name "catch-up," the catch-up skill is scoped to pulling upstream code changes into forked tools, not giving a status recap - "catch me up" is a status-digest request, which is what bearings owns.
+
+**(d) "/catch-up"** → **catch-up**
+Matched words: *"Use when the captain invokes /catch-up"*

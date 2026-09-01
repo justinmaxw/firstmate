@@ -1,0 +1,43 @@
+# catch-up skill - mechanical claim verification (read-only)
+
+$ gh-axi api /repos/{owner}/{repo}/pulls/<pr-number> --jq ".head.sha"   # SKILL.md:271, <pr-number> -> 2
+  body: 55ac8ebcf150638b8be32f567f5b9b915dd6d210
+  truncated: false
+
+$ gh-axi api /repos/{owner}/{repo}/pulls/{number} --jq ".head.sha"     # pre-fix literal form
+error: "gh: Not Found (HTTP 404)"
+code: NOT_FOUND
+
+$ bin/fm-merge-local.sh   # SKILL.md: local-only landings go through this gate, ff-only
+# Perform the approved local merge for a local-only ship task: fast-forward the
+# project's default branch to the crewmate's fm/<id> branch.
+#
+# This is firstmate's merge gate-action (the captain's merge authority applied
+# locally instead of via a GitHub PR). It is the one sanctioned exception to hard
+# rule #1 "never run state-changing git in projects/", and it is narrow: it only
+# runs for mode=local-only tasks, only after the captain approves (or yolo=on
+# auto-approves), and only as a clean fast-forward - it refuses a diverged branch
+# and tells you to have the crewmate rebase. See AGENTS.md prime directives,
+# project management, and task lifecycle.
+# Usage: fm-merge-local.sh <task-id>
+set -eu
+
+$ head bin/fm-pr-merge.sh  # SKILL.md:284-285: squash unless --merge after --
+# Merge method on GitHub defaults to --squash when the caller passes none of
+# --squash, --merge, --rebase, or --method after the optional -- separator.
+# GitLab adds no method flag at all: its merge method is the project's own
+
+$ ls -l $(command -v quota-axi); readlink -f  # SKILL.md:30,255: npm global symlinks into projects/quota-axi
+lrwxr-xr-x@ 1 justinmaxw  staff  51 Aug 26 13:32 /Users/justinmaxw/.nvm/versions/node/v24.18.0/bin/quota-axi -> ../lib/node_modules/quota-axi/dist/bin/quota-axi.js
+/Users/justinmaxw/github/firstmate/projects/quota-axi/dist/bin/quota-axi.js
+
+$ ls -ld ~/.no-mistakes/.git  # SKILL.md:44: managed install, not a git repo
+ls: /Users/justinmaxw/.no-mistakes/.git: No such file or directory
+
+$ no-mistakes axi run --help  # SKILL.md:278-280: --intent required, --skip comma-separated, and the rule Phase 3 excepts
+--intent is required when starting a new run: pass what the user set out
+Commit post-pipeline follow-up work on top of the existing branch so every pipeline fix commit remains present. Never abort-and-restart, reset, or replace the branch in a way that drops prior gate-fix commits.
+      --skip string     comma-separated pipeline steps to skip
+
+$ grep 'skipped: local-only project' bin/fm-fleet-sync.sh  # SKILL.md:61
+330:    echo "$label: skipped: local-only project"
