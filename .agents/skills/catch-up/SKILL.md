@@ -165,7 +165,9 @@ Same worktree assertion.
 Require `firstmate-coding-guidelines` before editing, since this is shared tracked material.
 
 1. Branch from `main` as `fm/<task-id>`, with the task named `firstmate-catch-up-<yymmdd>`.
-2. `git merge upstream/main`.
+2. `git merge upstream/main`, then immediately record the exact commit that was merged: `git rev-parse upstream/main` before the merge, or read the merge commit's second parent after it.
+   Report that SHA back with the ready branch and put it in the run's intent, because Phase 3's verification needs a pinned value.
+   `upstream/main` is a local remote-tracking ref that any intervening fetch - a concurrent run, `/updatefirstmate`, a pipeline step - can advance while this pipeline is running, so checking against the live ref later would fail on a perfectly intact merge.
 3. Our changes are whatever `git log --oneline upstream/main..main` lists - typically the crewmate/scout adapters we added, plus any local fixes and docs.
 4. Conflicts in `AGENTS.md`, `bin/`, and `.agents/skills/` are the common case.
    Upstream restructures contracts often; take upstream's structure and re-attach our additions to it rather than re-asserting our old text wholesale.
@@ -217,7 +219,10 @@ Do not kill anything to force the gate - Phase 1's work is already banked on rea
 3. **npm axi tools** - `npm update -g gh-axi lavish-axi chrome-devtools-axi tasks-axi`.
    Smoke each one (for example `gh-axi repo view`, `tasks-axi list`, and a bare invocation of `lavish-axi` and `chrome-devtools-axi` to confirm each binary still responds) before moving on.
    Never `npm update -g quota-axi` - that would replace our patched clone with the registry copy and destroy our only copy.
-4. **no-mistakes** - `no-mistakes update`, then confirm the daemon came back and `no-mistakes --version` reports the new release.
+4. **no-mistakes** - before running anything here, confirm there is no active no-mistakes background monitor on this run's own firstmate landing PR, for example with `no-mistakes axi status` for that task.
+   **A green-but-unmerged PR still under background monitoring counts as in flight for this check**, even though its own synchronous gate run already returned checks-passed - that is exactly the case this check exists to catch, because `no-mistakes update` resets the shared daemon and would strand the branch Phase 3 still needs.
+   This does not gate Phase 3 on Phase 2 or Phase 2 on Phase 3; the two stay independent, and this is a check on one command, not an ordering rule.
+   Then run `no-mistakes update`, and confirm the daemon came back and `no-mistakes --version` reports the new release.
 
 Release the gate and tell the captain what moved.
 
@@ -226,11 +231,16 @@ Release the gate and tell the captain what moved.
 Separate from Phase 2 and not gated by it.
 
 1. Captain approves the PR merge (standing `yolo` does not cover this - it changes every home's instructions).
-2. Before merging, confirm the PR head still carries the upstream merge as a real merge commit.
+2. Before merging, confirm the PR head still carries the upstream merge.
    The pipeline runs a `rebase` gate agent, and a rebase that linearizes this branch would drop the merge commit before the PR is merged, at which point step 3's `--merge` preserves nothing.
-   Check the actual history of the PR head: `git merge-base --is-ancestor upstream/main <pr-head>` must succeed, and the head's merge commit must still have two parents (`git rev-list --parents -n 1 <pr-head>`, or walk back to the merge commit and read its parents).
-   If both hold, the structure is intact - go to step 3.
-   If either fails, the branch was linearized somewhere in the pipeline: stop, do not merge, and re-run the landing with the rebase step skipped - `no-mistakes axi run --skip=rebase` (`--skip` takes comma-separated pipeline steps).
+   The check is one ancestry test against the SHA Phase 1 recorded: `git merge-base --is-ancestor <recorded-upstream-sha> <pr-head>` must succeed.
+   Use the recorded SHA, never the live `upstream/main` ref, which may have moved since the merge.
+   Do not test the PR head's own parent count: the pipeline commits its gate fixes on top of the branch, so the head is normally a single-parent fix commit even when the merge is intact deeper in the history.
+   If the ancestry test passes, the structure is intact - go to step 3.
+   If it fails, the branch lost its merge commit somewhere in the pipeline.
+   That branch is abandoned, not repaired - a commit that no longer exists cannot be recovered by re-running anything on the same branch, and `--skip=rebase` on an already-linearized branch is inert.
+   Stop, do not merge, abandon the branch and its PR, have the firstmate worker re-branch fresh from local `main`, redo `git merge upstream/main` (recording the newly merged SHA as in Phase 1 step 2), and start an entirely new pipeline run for that fresh branch with `no-mistakes axi run --skip=rebase --intent ...` (`--skip` takes comma-separated pipeline steps; `--intent` is required to start a run).
+   Never a bare re-run or a fix attempt on the branch that already lost the merge.
    Re-check this step on the new PR head before merging.
 3. Merge with an explicit non-squash method: `bin/fm-pr-merge.sh <id> <pr url> -- --merge`.
    This PR's content is a real `git merge upstream/main`, and `bin/fm-pr-merge.sh` squashes on GitHub when the caller names no method, which would flatten that merge and drop `upstream/main` from `main`'s ancestry - leaving the next catch-up run's behind-count wrong and its merge re-applying commits we already have.
