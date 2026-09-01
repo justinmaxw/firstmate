@@ -40,29 +40,49 @@ Confirm the npm link before assuming it:
 `ls -l "$(dirname "$(command -v node)")/quota-axi"` resolves to the versioned `lib/node_modules/quota-axi` entry, which is itself a symlink straight into `projects/quota-axi`.
 If that chain is broken, quota-axi is no longer live-shared and drops out of the quiet window.
 
+### The two clones firstmate cannot refresh or rebuild on its own
+
+quota-axi and baby-menu are registered `local-only` in `data/projects.md` and their `origin` is upstream itself.
+For a clone shaped that way, firstmate has no sanctioned automatic path to fetch upstream state, and none to rebuild the live checkout after a landing.
+`bin/fm-fleet-sync.sh` cannot serve either purpose: it returns `skipped: local-only project` before it ever fetches, for any project registered `local-only`, so it is not a viable recon path for these two clones.
+Do not engineer around this with a new script or a scout dispatch.
+Exactly two commands in this whole skill run under a concrete captain approval given in the moment - the fetch pair in Phase 0 and the rebuild in Phase 2 step 2 - and nothing else in this skill runs that way.
+
 ## Phase 0 - Recon
 
-Writes no branch and moves no `main` anywhere.
+Moves no branch and lands no commit anywhere.
 Safe at any time, with any amount of work running.
 Never skip it.
+
+Start with the part that needs no approval:
 
 ```
 git -C . fetch upstream --quiet
 git rev-list --count main..upstream/main
-bin/fm-fleet-sync.sh projects/quota-axi
-git -C projects/quota-axi status -sb
-bin/fm-fleet-sync.sh projects/baby-menu
-git -C projects/baby-menu status -sb
 npm outdated -g --depth=0
 no-mistakes --version
 ```
 
-The fleet-sync calls and the `status -sb` reads are the only `projects/` commands this phase runs.
-Refresh the clones through `bin/fm-fleet-sync.sh` rather than a raw `git fetch`, since that script is the sanctioned owner of a `projects/` refresh; it does more than fetch, also fast-forwarding a default branch that is a clean ancestor of origin and pruning local branches whose remote is gone.
-For quota-axi and baby-menu the expected and correct result is a loud `STUCK: ... diverged main ... N commits behind ... - needs attention` line, because their local `main` carries our own commits and is therefore diverged from origin, and fleet sync deliberately leaves a diverged default branch untouched instead of moving it.
-That line is the script working as designed - never treat it as a problem to fix.
-If instead it reports `skipped: local-only project`, fleet sync returned before fetching, so `origin/main` is as stale as the last refresh and the behind-count below is only a floor.
-Say so in the report, and take the true count from the Phase 1 crewmate, which fetches inside its own worktree.
+Then refresh the two patched clones.
+Present these two commands to the captain verbatim and wait for approval before running either one:
+
+```
+git -C projects/quota-axi fetch origin --quiet
+git -C projects/baby-menu fetch origin --quiet
+```
+
+On approval, run exactly those two commands and nothing else.
+Invoking `/catch-up` is not that approval.
+The approval is given in the moment, for this run, for these two commands only; it grants no standing authority, and it never carries over to another command, another clone, or a future run.
+Every run asks again.
+Without it there is no fresh `origin/main` for either clone, so say so and report their counts as stale rather than guessing.
+
+With origin refreshed, read each clone:
+
+```
+git -C projects/quota-axi status -sb
+git -C projects/baby-menu status -sb
+```
 
 For each patched clone, capture the definitive list of what is ours:
 
@@ -90,23 +110,26 @@ One crewmate each.
 The brief must require:
 
 1. Assert the worktree is not the primary clone.
-2. Before merging anything, drop the rollback anchor on local `main`: `git tag catch-up/pre-$(date +%y%m%d)`.
+2. Before merging anything, drop the rollback anchor on local `main`: `git tag catch-up/pre-$(date +%y%m%d) main`.
+   Name `main` explicitly.
+   A fresh spawn worktree's own HEAD is `origin/<default>` - the spawn path hard-resets it there - so a bare `git tag` would anchor upstream's tip and none of our commits, and the rollback below would then destroy the only copy of the patches.
+   The worktree resolves the shared `main` ref regardless of where its own HEAD sits, so naming it anchors local `main`'s real tip.
    The crewmate creates this tag itself, inside its own worktree - firstmate never runs a tag or any other write command under `projects/<name>`.
    That is timing-equivalent to anchoring before dispatch: the crewmate's worktree shares one repository and one ref store with `projects/<name>`, so the tag lands on the identical pre-catch-up tip of local `main`.
-   In the same step, delete the previous run's anchor with `git tag -d catch-up/pre-<older date>` for any older `catch-up/pre-*` tag - reaching this point proves the last run landed and no longer needs its anchor.
+   In the same step, delete any surviving `catch-up/pre-*` tag from an earlier run with `git tag -d <tag>`, including one from earlier the same day - reaching this point proves that run landed and no longer needs its anchor, and a same-day leftover would otherwise make this run's `git tag` fail.
    The tag is local and cheap, and it is the entire rollback story for a repo whose work has no remote copy.
-3. Branch from local `main` as `fm/<task-id>`, the branch every crewmate brief already prescribes.
+3. Branch from local `main` as `fm/<task-id>`: `git switch -c fm/<task-id> main`, again naming `main` explicitly for the same reason.
+   A bare `git switch -c` would branch from `origin/main` and silently drop our commits out of the merge.
    Name the dispatched task `<name>-catch-up-<yymmdd>` so that branch reads as `fm/<name>-catch-up-<yymmdd>`; the landing step below looks up `fm/<task-id>` and nothing else, so the two must agree.
-4. `git fetch origin`, then report the real behind-count (`git rev-list --count main..origin/main`) back to firstmate.
-5. `git merge origin/main` - a merge, never a rebase.
+4. `git merge origin/main` - a merge, never a rebase.
    Rebase rewrites our only copy of our commits; merge preserves them.
-6. Resolve conflicts by keeping our behavior and adopting upstream's structure.
+5. Resolve conflicts by keeping our behavior and adopting upstream's structure.
    When upstream restructured a file our patch lives in, port the patch onto the new structure rather than reverting either side.
-7. Build, test, and lint on the project's own scripts.
+6. Build, test, and lint on the project's own scripts.
    For quota-axi that is `pnpm run build && vitest run` (identical to `pnpm test`) plus `pnpm run lint`.
-8. Prove each commit from the Phase 0 "ours" list still works, naming the evidence per item.
+7. Prove each commit from the Phase 0 "ours" list still works, naming the evidence per item.
    For quota-axi that means the local providers we added still report - exercise the real CLI, not just unit tests.
-9. Stop on a clean ready branch.
+8. Stop on a clean ready branch.
    Do not push.
    Do not touch the live `dist/`.
 
@@ -155,7 +178,14 @@ Do not kill anything to force the gate - Phase 1's work is already banked on rea
 1. **baby-menu** - land with `bin/fm-merge-local.sh`.
    Nothing else depends on it.
    (This one does not actually need the gate; it can also land at the end of Phase 1.)
-2. **quota-axi** - land with `bin/fm-merge-local.sh`, then rebuild in the clone (`pnpm run build`), then immediately smoke the *global* command: `quota-axi` must return real data.
+2. **quota-axi** - land with `bin/fm-merge-local.sh`, then rebuild the clone.
+   The landing leaves `dist/` stale, and the primary clone's `dist/` is what the global symlink resolves to, so the rebuild has to happen there and nowhere else - a crewmate worktree's `dist/` is not what the global command reads, which is why the Phase 1 brief tells the crewmate to leave the live `dist/` alone.
+   Present the rebuild command to the captain verbatim - `pnpm run build`, run in `projects/quota-axi` - and wait for approval.
+   On approval run exactly that one command and nothing else.
+   Invoking `/catch-up` is not that approval.
+   It is given in the moment, for this run, for that one command; it grants no standing authority, and it never carries over to another command, another clone, or a future run.
+   Every run asks again.
+   Then immediately smoke the *global* command: `quota-axi` must return real data.
    The npm link means a broken build breaks dispatch for every home.
    Do not proceed until it answers.
 3. **npm axi tools** - `npm update -g gh-axi lavish-axi chrome-devtools-axi tasks-axi`.
@@ -190,7 +220,7 @@ Separate from Phase 2 and not gated by it.
   Capture it - that column is the rollback record.
   This bullet covers `gh-axi`, `lavish-axi`, `chrome-devtools-axi`, and `tasks-axi` only.
   quota-axi is not an npm tool for rollback purposes even though `npm outdated -g` lists it: `npm install -g quota-axi@<version>` would replace the symlink into `projects/quota-axi` with the registry copy and destroy our only copy of the patches, exactly as `npm update -g quota-axi` would.
-  Roll quota-axi back through the `catch-up/pre-<date>` tag above, then `pnpm run build` in the clone - never through npm.
+  Roll quota-axi back through the `catch-up/pre-<date>` tag above, then rebuild through Phase 2 step 2's approval-gated `pnpm run build` - never through npm.
 - no-mistakes: reinstall the prior release; the update is not reversible in place.
 - firstmate: revert the merge PR, then `/updatefirstmate` again to propagate the revert.
 
@@ -201,5 +231,5 @@ It is the only record of where everything started.
 
 Tear down the Phase 1 crewmates only after their work is landed and smoke-tested.
 Leave the `catch-up/pre-*` tags in place; firstmate never removes them.
-The next catch-up run's Phase 1 crewmate deletes the previous anchor as it creates its own, so the old anchor survives until a later run proves this one landed fine.
+The next catch-up run's Phase 1 crewmate deletes this anchor as its first action, at the moment it creates its own, so the anchor survives every step of this run and is cleared only once a later run starts from a landed tree.
 Append the "ours" commit lists to nothing - they are re-derivable, and stale copies rot.
