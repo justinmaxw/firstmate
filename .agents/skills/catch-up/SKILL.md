@@ -192,8 +192,12 @@ All of these must hold before touching anything in this phase:
   A Phase 1 worker that has not reported done blocks the gate exactly like a foreign worker, because landing a half-resolved merge would fast-forward local `main` onto it and, for quota-axi, ship that broken build to every home.
   Every other worker anywhere blocks the gate and must be absent.
   Do not re-tighten this into "no crewmate at all" - that gate can never open on a run that had work to do.
-- No no-mistakes validation run in flight anywhere.
+- No no-mistakes validation run in flight anywhere, with one exclusion.
   A daemon reset mid-run strands a branch in custody.
+  The exclusion is this run's own firstmate landing PR once it has reached checks-passed: green-but-unmerged, it does not block entry to this phase, so Phase 2 can proceed while Phase 3 waits on the captain.
+  Without that exclusion this gate would never open, since Phase 1 always ends with a green firstmate PR that Phase 3 has not merged yet, and the two phases are deliberately independent.
+  This is the general entry gate and it is the more permissive of the two rules about that PR; step 4's `no-mistakes update` check below is narrower and still treats the same green-but-unmerged PR as in flight.
+  Do not conflate them: passing this gate says nothing about whether step 4 may run.
 - Away mode off (`state/.afk` absent).
   Do not do this unattended.
 - The captain is not mid-review in a Lavish session that a `lavish-axi` update would disturb.
@@ -235,6 +239,8 @@ Separate from Phase 2 and not gated by it.
    The pipeline runs a `rebase` gate agent, and a rebase that linearizes this branch would drop the merge commit before the PR is merged, at which point step 3's `--merge` preserves nothing.
    The check is one ancestry test against the SHA Phase 1 recorded: `git merge-base --is-ancestor <recorded-upstream-sha> <pr-head>` must succeed.
    Use the recorded SHA, never the live `upstream/main` ref, which may have moved since the merge.
+   Read `<pr-head>` as `branch_sync.pipeline.pushed_head` from `no-mistakes axi status` for that task - the commit the PR actually points at - and fetch it first if it is not present locally.
+   Never test the local `fm/<task-id>` ref: the pipeline-pushed head can be ahead of or different from it, which is the whole reason `no-mistakes axi sync` exists, so a linearization that lives only on the pushed head would pass a check run against the stale local ref.
    Do not test the PR head's own parent count: the pipeline commits its gate fixes on top of the branch, so the head is normally a single-parent fix commit even when the merge is intact deeper in the history.
    If the ancestry test passes, the structure is intact - go to step 3.
    If it fails, the branch lost its merge commit somewhere in the pipeline.
