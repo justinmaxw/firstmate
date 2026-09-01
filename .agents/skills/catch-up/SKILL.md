@@ -91,7 +91,8 @@ One crewmate each.
 The brief must require:
 
 1. Assert the worktree is not the primary clone.
-2. Branch from local `main` as `fm/<name>-catch-up-<yymmdd>`.
+2. Branch from local `main` as `fm/<task-id>`, the branch every crewmate brief already prescribes.
+   Name the dispatched task `<name>-catch-up-<yymmdd>` so that branch reads as `fm/<name>-catch-up-<yymmdd>`; the landing step below looks up `fm/<task-id>` and nothing else, so the two must agree.
 3. `git merge origin/main` - a merge, never a rebase.
    Rebase rewrites our only copy of our commits; merge preserves them.
 4. Resolve conflicts by keeping our behavior and adopting upstream's structure.
@@ -105,7 +106,8 @@ The brief must require:
    Do not touch the live `dist/`.
 
 Firstmate lands it later with `bin/fm-merge-local.sh` - never a raw git merge around that guard.
-That script fast-forwards the project's default branch to the crewmate's `fm/<id>` branch; it requires the project checkout to already be on its default branch and clean, and it refuses (rather than forcing) a branch that is not a clean fast-forward.
+That script derives the branch as `fm/<task-id>` from the task id alone and errors out if no such branch exists, which is why step 2 cannot pick any other name.
+It fast-forwards the project's default branch to that branch; it requires the project checkout to already be on its default branch and clean, and it refuses (rather than forcing) a branch that is not a clean fast-forward.
 
 ### firstmate - delivery mode `no-mistakes`
 
@@ -113,7 +115,7 @@ One crewmate.
 Same worktree assertion.
 Require `firstmate-coding-guidelines` before editing, since this is shared tracked material.
 
-1. Branch from `main` as `fm/firstmate-catch-up-<yymmdd>`.
+1. Branch from `main` as `fm/<task-id>`, with the task named `firstmate-catch-up-<yymmdd>`.
 2. `git merge upstream/main`.
 3. Our changes are whatever `git log --oneline upstream/main..main` lists - typically the crewmate/scout adapters we added, plus any local fixes and docs.
 4. Conflicts in `AGENTS.md`, `bin/`, and `.agents/skills/` are the common case.
@@ -148,7 +150,7 @@ Do not kill anything to force the gate - Phase 1's work is already banked on rea
 1. **baby-menu** - land with `bin/fm-merge-local.sh`.
    Nothing else depends on it.
    (This one does not actually need the gate; it can also land at the end of Phase 1.)
-2. **quota-axi** - land with `bin/fm-merge-local.sh`, then rebuild in the clone (`npm run build`), then immediately smoke the *global* command: `quota-axi` must return real data.
+2. **quota-axi** - land with `bin/fm-merge-local.sh`, then rebuild in the clone (`pnpm run build`), then immediately smoke the *global* command: `quota-axi` must return real data.
    The npm link means a broken build breaks dispatch for every home.
    Do not proceed until it answers.
 3. **npm axi tools** - `npm update -g gh-axi lavish-axi chrome-devtools-axi tasks-axi`.
@@ -163,7 +165,9 @@ Release the gate and tell the captain what moved.
 Separate from Phase 2 and not gated by it.
 
 1. Captain approves the PR merge (standing `yolo` does not cover this - it changes every home's instructions).
-2. Merge with `bin/fm-pr-merge.sh`.
+2. Merge with an explicit non-squash method: `bin/fm-pr-merge.sh <id> <pr url> -- --merge`.
+   This PR's content is a real `git merge upstream/main`, and `bin/fm-pr-merge.sh` squashes on GitHub when the caller names no method, which would flatten that merge and drop `upstream/main` from `main`'s ancestry - leaving the next catch-up run's behind-count wrong and its merge re-applying commits we already have.
+   That flag is for this landing PR only; it says nothing about how other PRs in this repo should merge.
 3. Run `/updatefirstmate`.
    That path fast-forwards this home and every secondmate home, skips any home that is not a clean fast-forward, never touches gitignored operational dirs, and nudges each updated home to re-read its instructions.
    It is safe with secondmates running, which is why we use it instead of hand-rolling the propagation.
@@ -172,8 +176,11 @@ Separate from Phase 2 and not gated by it.
 
 ## Rollback
 
-- Patched clone: `git -C projects/<name> reset --hard catch-up/pre-<date>` on the *branch*, or simply abandon the unmerged branch.
+- Patched clone: `git -C projects/<name> reset --hard catch-up/pre-<date>`, or simply abandon the unmerged branch.
   `main` was never touched until `fm-merge-local.sh` ran, and the tag anchors it if it was.
+  This is the one sanctioned exception to the never-reset-hard rule above, and it is narrow: the target is always the `catch-up/pre-<date>` tag Phase 1 dropped as the rollback anchor, which by construction already contains every one of our commits.
+  It is only ever used to undo a landing that tag anchors.
+  Never reset without that tag as the target, never as a bare force-reset, and never as a way to discard work - the never-push, never-force, never-discard rule stands in full otherwise.
 - npm tool: `npm install -g <tool>@<previous version>` from the `Current` column captured in Phase 0.
   Capture it - that column is the rollback record.
 - no-mistakes: reinstall the prior release; the update is not reversible in place.
