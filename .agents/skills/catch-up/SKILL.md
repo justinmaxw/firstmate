@@ -36,9 +36,16 @@ Re-derive this at every run rather than trusting the table; the shapes change.
 | gh-axi, lavish-axi, chrome-devtools-axi, tasks-axi | npm global | clean install | none | `npm update -g` | **yes** |
 | no-mistakes | `~/.no-mistakes` | managed install, not a git repo | none | `no-mistakes update` | **yes** - shared daemon |
 
-Confirm the npm link before assuming it:
-`ls -l "$(dirname "$(command -v node)")/quota-axi"` resolves to the versioned `lib/node_modules/quota-axi` entry, which is itself a symlink straight into `projects/quota-axi`.
-If that chain is broken, quota-axi is no longer live-shared and drops out of the quiet window.
+Confirm the npm link before assuming it, in two hops - the second one is what actually proves the claim:
+
+```
+ls -l "$(dirname "$(command -v node)")/quota-axi"
+ls -l "$(dirname "$(command -v node)")/../lib/node_modules/quota-axi"
+```
+
+The first resolves the global command to the versioned `lib/node_modules/quota-axi` entry; the second must show that entry is itself a symlink straight into `projects/quota-axi`.
+A registry install has the same first hop, so the first command alone cannot tell a live-linked clone from a plain install.
+If the second hop is not that symlink, the chain is broken, quota-axi is no longer live-shared, and it drops out of the quiet window.
 
 ### The two clones firstmate cannot refresh or rebuild on its own
 
@@ -112,7 +119,7 @@ Carry the answer into the Phase 1 brief: name the exact tag the crewmate may del
 `npm outdated -g` also lists `quota-axi` because of the link - that entry is informational only, never act on it directly (see Phase 2 step 3).
 
 Firstmate's `main..upstream/main` count is an upper bound, not the real backlog: a prior upstream import that was squash-merged carries none of upstream's ancestry even though its content already landed, so every commit it absorbed is counted again - this repo's own `c26e400` ("merge current upstream firstmate into the captain's fork") is exactly that, a single-parent commit.
-Skim `git log --oneline upstream/main..main` and report what is genuinely new rather than trusting the raw number, and expect the first merge after a flattened import to be a full re-import rather than a routine one.
+Skim `git log --oneline main..upstream/main` - the same direction as the behind-count itself - and report what is genuinely new rather than trusting the raw number, and expect the first merge after a flattened import to be a full re-import rather than a routine one.
 Repairing that history is separate work on `main` and out of scope for this skill.
 
 Report a plain table to the captain: target, commits behind, commits ours, and whether it is live-shared.
@@ -209,6 +216,11 @@ Do not kill anything to force the gate - Phase 1's work is already banked on rea
 
 ### Order - smallest blast radius first, smoke test between each
 
+Both landings below run through `bin/fm-merge-local.sh`, and their authority comes from the project's own registered delivery mode and `yolo` merge posture (AGENTS.md section 7), not from this skill.
+That is a different track from the in-the-moment project-operation approval this skill uses for the Phase 0 fetches, the rebuild, and the rollback reset; the two are deliberately separate, so do not collapse them into one.
+With `yolo` off the captain approves each landing; with it on firstmate lands green, in-scope work itself.
+`bin/fm-project-mode.sh` today reports `local-only off` for both quota-axi and baby-menu, so as things currently stand both landings need the captain's approval through that existing track - re-read the posture each run rather than treating that as fixed here.
+
 1. **baby-menu** - land with `bin/fm-merge-local.sh`.
    Nothing else depends on it.
    (This one does not actually need the gate; it can also land at the end of Phase 1.)
@@ -222,6 +234,7 @@ Do not kill anything to force the gate - Phase 1's work is already banked on rea
    Then immediately smoke the *global* command: `quota-axi` must return real data.
    The npm link means a broken build breaks dispatch for every home.
    Do not proceed until it answers.
+   If the smoke fails, go straight to Rollback for the approval-gated recovery: reset the clone to the `catch-up/pre-<date>` anchor, then re-run the approved rebuild.
 3. **npm axi tools** - `npm update -g gh-axi lavish-axi chrome-devtools-axi tasks-axi`.
    Smoke each one (for example `gh-axi repo view`, `tasks-axi list`, and a bare invocation of `lavish-axi` and `chrome-devtools-axi` to confirm each binary still responds) before moving on.
    Never `npm update -g quota-axi` - that would replace our patched clone with the registry copy and destroy our only copy.
