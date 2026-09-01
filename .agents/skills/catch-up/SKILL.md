@@ -172,6 +172,8 @@ Require `firstmate-coding-guidelines` before editing, since this is shared track
 4. Conflicts in `AGENTS.md`, `bin/`, and `.agents/skills/` are the common case.
    Upstream restructures contracts often; take upstream's structure and re-attach our additions to it rather than re-asserting our old text wholesale.
 5. Run the no-mistakes pipeline through a green PR.
+   Launch it normally, without `--skip=rebase`: skipping a protective pipeline step up front, to head off something that has not actually happened, trades a real safeguard for a guess.
+   Phase 3 step 2 verifies the upstream merge survived the pipeline and defines the recovery if it did not, which is the only moment that check matters, and the skip belongs to that abandon-and-restart path alone - never to the first attempt.
 
 A large merge (dozens of upstream commits) is normal here and is not a reason to split the work.
 Splitting an upstream merge into partial merges creates a half-merged tree that is harder to reason about than one big conflict pass.
@@ -225,8 +227,11 @@ Do not kill anything to force the gate - Phase 1's work is already banked on rea
    Never `npm update -g quota-axi` - that would replace our patched clone with the registry copy and destroy our only copy.
 4. **no-mistakes** - before running anything here, confirm there is no active no-mistakes background monitor on this run's own firstmate landing PR, for example with `no-mistakes axi status` for that task.
    **A green-but-unmerged PR still under background monitoring counts as in flight for this check**, even though its own synchronous gate run already returned checks-passed - that is exactly the case this check exists to catch, because `no-mistakes update` resets the shared daemon and would strand the branch Phase 3 still needs.
-   This does not gate Phase 3 on Phase 2 or Phase 2 on Phase 3; the two stay independent, and this is a check on one command, not an ordering rule.
-   Then run `no-mistakes update`, and confirm the daemon came back and `no-mistakes --version` reports the new release.
+   This is a check on one command, not an ordering rule: Phase 3 is never gated on Phase 2.
+   If the monitor is clear, run `no-mistakes update`, then confirm the daemon came back and `no-mistakes --version` reports the new release.
+   If the monitor is still active, skip this step for this run and finish the other three normally.
+   That is the expected outcome on an ordinary run, not a fault: Phase 1 ends with a green firstmate PR, Phase 3 waits on the captain, and monitoring is simply still on.
+   Tell the captain plainly that the no-mistakes tool update was deferred and why; it runs on a later `/catch-up` once that PR has landed.
 
 Release the gate and tell the captain what moved.
 
