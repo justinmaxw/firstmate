@@ -46,7 +46,9 @@ quota-axi and baby-menu are registered `local-only` in `data/projects.md` and th
 For a clone shaped that way, firstmate has no sanctioned automatic path to fetch upstream state, and none to rebuild the live checkout after a landing.
 `bin/fm-fleet-sync.sh` cannot serve either purpose: it returns `skipped: local-only project` before it ever fetches, for any project registered `local-only`, so it is not a viable recon path for these two clones.
 Do not engineer around this with a new script or a scout dispatch.
-Exactly two commands in this whole skill run under a concrete captain approval given in the moment - the fetch pair in Phase 0 and the rebuild in Phase 2 step 2 - and nothing else in this skill runs that way.
+Where this skill needs a `projects/` command firstmate cannot otherwise run, it names that command and asks the captain for approval in the moment.
+Those points are enumerated, not counted: Phase 0's two fetches (`projects/quota-axi` and `projects/baby-menu`), Phase 2 step 2's quota-axi rebuild, and Rollback's reset and its follow-up rebuild.
+Each one names its literal command, asks fresh for that specific run, grants no standing authority, and never carries over to another command, another clone, or a future run.
 
 ## Phase 0 - Recon
 
@@ -60,8 +62,11 @@ Start with the part that needs no approval:
 git -C . fetch upstream --quiet
 git rev-list --count main..upstream/main
 npm outdated -g --depth=0
-no-mistakes --version
+no-mistakes doctor
 ```
+
+Use `no-mistakes doctor`, not `no-mistakes --version`.
+Both are read-only, but `--version` prints only the installed version and suppresses the `A new version of no-mistakes is available: vX -> vY` banner, so it cannot tell you whether no-mistakes is behind at all - and a run that reports "nothing behind" on that basis would silently skip Phase 2 step 4.
 
 Then refresh the two patched clones.
 Present these two commands to the captain verbatim and wait for approval before running either one:
@@ -96,6 +101,10 @@ Write it into the brief; do not make the worker rediscover it.
 
 `npm outdated -g` also lists `quota-axi` because of the link - that entry is informational only, never act on it directly (see Phase 2 step 3).
 
+Firstmate's `main..upstream/main` count is an upper bound, not the real backlog: a prior upstream import that was squash-merged carries none of upstream's ancestry even though its content already landed, so every commit it absorbed is counted again - this repo's own `c26e400` ("merge current upstream firstmate into the captain's fork") is exactly that, a single-parent commit.
+Skim `git log --oneline upstream/main..main` and report what is genuinely new rather than trusting the raw number, and expect the first merge after a flattened import to be a full re-import rather than a routine one.
+Repairing that history is separate work on `main` and out of scope for this skill.
+
 Report a plain table to the captain: target, commits behind, commits ours, and whether it is live-shared.
 If nothing is behind anywhere, say so and stop - there is no Phase 1.
 
@@ -110,13 +119,14 @@ One crewmate each.
 The brief must require:
 
 1. Assert the worktree is not the primary clone.
-2. Before merging anything, drop the rollback anchor on local `main`: `git tag catch-up/pre-$(date +%y%m%d) main`.
+2. Before merging anything, set the rollback anchor on local `main`, in this order.
+   First delete any surviving `catch-up/pre-*` tag from an earlier run with `git tag -d <tag>`, including one from earlier the same day; reaching this point proves that run landed and no longer needs its anchor, and a same-day leftover would otherwise make the create below fail with `tag already exists`.
+   Then create this run's anchor: `git tag catch-up/pre-$(date +%y%m%d) main`.
    Name `main` explicitly.
    A fresh spawn worktree's own HEAD is `origin/<default>` - the spawn path hard-resets it there - so a bare `git tag` would anchor upstream's tip and none of our commits, and the rollback below would then destroy the only copy of the patches.
    The worktree resolves the shared `main` ref regardless of where its own HEAD sits, so naming it anchors local `main`'s real tip.
    The crewmate creates this tag itself, inside its own worktree - firstmate never runs a tag or any other write command under `projects/<name>`.
    That is timing-equivalent to anchoring before dispatch: the crewmate's worktree shares one repository and one ref store with `projects/<name>`, so the tag lands on the identical pre-catch-up tip of local `main`.
-   In the same step, delete any surviving `catch-up/pre-*` tag from an earlier run with `git tag -d <tag>`, including one from earlier the same day - reaching this point proves that run landed and no longer needs its anchor, and a same-day leftover would otherwise make this run's `git tag` fail.
    The tag is local and cheap, and it is the entire rollback story for a repo whose work has no remote copy.
 3. Branch from local `main` as `fm/<task-id>`: `git switch -c fm/<task-id> main`, again naming `main` explicitly for the same reason.
    A bare `git switch -c` would branch from `origin/main` and silently drop our commits out of the merge.
@@ -162,15 +172,18 @@ It is short - land, rebuild, update, smoke test.
 
 All of these must hold before touching anything in this phase:
 
-- No live crewmate in **any** home - the main home and every registered secondmate home in `data/secondmates.md`.
+- No live crewmate in **any** home other than this run's own Phase 1 workers - the main home and every registered secondmate home in `data/secondmates.md`.
   Check each home's task records, not just this one's.
+  This run's own quota-axi, baby-menu, and firstmate crewmates do not count against the gate: they are expected to be sitting finished on ready branches right now, and Cleanup deliberately keeps them alive until Phase 2 has landed and smoke-tested their work.
+  Every other worker anywhere does count and must be absent.
+  Do not re-tighten this into "no crewmate at all" - that gate can never open on a run that had work to do.
 - No no-mistakes validation run in flight anywhere.
   A daemon reset mid-run strands a branch in custody.
 - Away mode off (`state/.afk` absent).
   Do not do this unattended.
 - The captain is not mid-review in a Lavish session that a `lavish-axi` update would disturb.
 
-If the gate does not hold, stop and tell the captain exactly which home is busy.
+If the gate does not hold, stop and tell the captain exactly which home is busy and which worker it is.
 Do not kill anything to force the gate - Phase 1's work is already banked on ready branches and waits fine.
 
 ### Order - smallest blast radius first, smoke test between each
@@ -211,7 +224,9 @@ Separate from Phase 2 and not gated by it.
 
 ## Rollback
 
-- Patched clone: `git -C projects/<name> reset --hard catch-up/pre-<date>`, or simply abandon the unmerged branch.
+- Patched clone: abandon the unmerged branch, or undo a landing with `git -C projects/<name> reset --hard catch-up/pre-<date>`.
+  That reset is a `projects/` write, so it runs the same way as the other named points: present that literal command to the captain and wait for approval before running it.
+  Invoking `/catch-up` is not that approval; it is given in the moment, for this run, for that one command, grants no standing authority, and never carries over to another command, another clone, or a future run.
   `main` was never touched until `fm-merge-local.sh` ran, and the tag anchors it if it was.
   This is the one sanctioned exception to the never-reset-hard rule above, and it is narrow: the target is always the `catch-up/pre-<date>` tag Phase 1 dropped as the rollback anchor, which by construction already contains every one of our commits.
   It is only ever used to undo a landing that tag anchors.
@@ -220,7 +235,8 @@ Separate from Phase 2 and not gated by it.
   Capture it - that column is the rollback record.
   This bullet covers `gh-axi`, `lavish-axi`, `chrome-devtools-axi`, and `tasks-axi` only.
   quota-axi is not an npm tool for rollback purposes even though `npm outdated -g` lists it: `npm install -g quota-axi@<version>` would replace the symlink into `projects/quota-axi` with the registry copy and destroy our only copy of the patches, exactly as `npm update -g quota-axi` would.
-  Roll quota-axi back through the `catch-up/pre-<date>` tag above, then rebuild through Phase 2 step 2's approval-gated `pnpm run build` - never through npm.
+  Roll quota-axi back through the `catch-up/pre-<date>` tag above, then rebuild the clone with `pnpm run build` in `projects/quota-axi` - never through npm.
+  That rebuild is its own named approval point: present the literal command, wait for approval in the moment for this run, and take no standing authority from it.
 - no-mistakes: reinstall the prior release; the update is not reversible in place.
 - firstmate: revert the merge PR, then `/updatefirstmate` again to propagate the revert.
 
