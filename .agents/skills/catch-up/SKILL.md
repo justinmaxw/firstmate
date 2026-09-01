@@ -3,6 +3,7 @@ name: catch-up
 description: >-
   Pull kunchenguid's upstream changes into every forked or locally patched tool this fleet depends on - firstmate, quota-axi, baby-menu, the npm axi tools, and no-mistakes - while preserving our own local changes.
   Use when the captain invokes /catch-up, asks to update the open source tools, asks to pull in kunchenguid's changes, or asks how far behind upstream we are.
+  Discovery is by this description alone - deliberately no pointer in AGENTS.md, matching bearings and ahoy, and deliberately no row in README.md's user-invocable table, since that file arrives from upstream on every sync and a fork-only row there would conflict on every future merge (see Deviations from the draft).
 user-invocable: true
 metadata:
   internal: true
@@ -345,6 +346,22 @@ Each is a correction discovered during review, not an oversight - do not silentl
   `bin/fm-merge-local.sh` derives the branch from the task id alone and can never find any other name.
 - **quota-axi is rebuilt with `pnpm run build`**, not the draft's `npm run build`.
   The project is pnpm-managed, and npm would leave a stray `node_modules` in the very clone the global command symlinks into.
+
+- **Phase 2's gate excludes this run's own confirmed-done Phase 1 workers**, where the draft's "no live crewmate in **any** home" was absolute.
+  Unmodified, that gate deadlocks: Cleanup deliberately keeps those workers alive until Phase 2 has landed their work, so it could never open on any real run.
+  A relaxed absolute gate is exactly what a future reader misreads as drift and silently re-tightens, which would reintroduce that deadlock - it is listed here so that cannot happen quietly.
+- **Phase 2's gate excludes this run's own checks-passed firstmate landing PR**, where the draft's "no no-mistakes validation run in flight anywhere" was absolute.
+  Same deadlock: Phase 1 always ends with a green, not-yet-merged firstmate PR, so the unmodified gate would never open either.
+  Also a deliberate relaxation of an absolute gate, listed for the same reason - do not re-tighten it.
+- **The npm-link check verifies two symlink hops**, where the draft showed one.
+  The first hop alone cannot distinguish a live-linked clone from an ordinary registry install, and that distinction is what decides whether quota-axi is live-shared at all.
+- **Rollback explicitly forbids `npm install -g quota-axi@<version>`**, narrower than the draft's blanket npm-rollback bullet.
+  That command would replace the patched clone with the registry copy and destroy it - the same hazard as `npm update -g quota-axi`, which the draft already forbade.
+- **Phase 0 carries an upper-bound caveat on firstmate's behind-count.**
+  A prior squash-merged upstream import in this repo's own history (`c26e400`) makes the raw count over-report what is genuinely new.
+- **No `/catch-up` row was added to `README.md`'s user-invocable skills table**, unlike what a new user-invocable skill would normally get.
+  Two reasons, the second decisive: this skill is fork-specific - it names kunchenguid, `projects/quota-axi`, `projects/baby-menu`, and this fleet's own layout - so a public template installer gains nothing from the pointer; and `README.md` is a shared tracked file that arrives from upstream on every sync, so a fork-only row there becomes a merge conflict on every future upstream merge, in the very file this skill exists to help merge.
+  Discoverability alone would argue for adding the row; the recurring merge conflict is what settles it.
 
 One file outside this skill changed with it: `.agents/skills/bearings/SKILL.md`'s description gave up the bare `catch-up` trigger token for the conversational `"catch me up"`, so that token no longer matches two unrelated skills once `/catch-up` exists.
 Nothing else in bearings changed.
