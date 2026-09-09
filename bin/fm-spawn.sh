@@ -14,8 +14,9 @@
 #   project's actual remote, so the worker's
 #   instructions and the recorded task delivery cannot drift apart; a brief
 #   scaffolded before that line existed warns once and launches on the flag,
-#   unless the project has no origin at all - such a brief still carries the
-#   remote branch step, so the pairing check refuses it. When
+#   unless the project has no origin at all and that brief really does carry the
+#   remote branch step, which the pairing check refuses. A --relaunch resumes an
+#   already-cleared brief and skips the pairing check. When
 #   the explicit mode carries less rigor than the project's standing posture, a
 #   loud one-line deviation notice is printed and the spawn continues.
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
@@ -1904,22 +1905,31 @@ if [ "$KIND" = ship ]; then
     exit 1
   fi
 
-  # A contract-less brief necessarily predates --no-origin, so it carries the
-  # remote branch step and expects an origin like any other brief; the pairing
-  # check therefore runs for every ship brief, not only for a matched contract.
-  BRIEF_EXPECTS_ORIGIN=1
-  case " $CONTRACT_LINE " in
-    *" origin=none "*) BRIEF_EXPECTS_ORIGIN=0 ;;
-  esac
+  # A contract-less brief carries whatever branch step it was scaffolded with -
+  # a legacy ship brief probes a remote, while a promoted scout's brief (which
+  # fm-promote.sh leaves in place) has no branch step at all and is origin-
+  # agnostic in both directions - so read the probe the worker would actually
+  # run rather than assuming one. A relaunch is exempt
+  # entirely: it resumes a brief and worktree this check already cleared at first
+  # spawn, and no mid-flight task should be told to delete its brief.
+  BRIEF_EXPECTS_ORIGIN=
+  if [ -n "$CONTRACT_LINE" ]; then
+    BRIEF_EXPECTS_ORIGIN=1
+    case " $CONTRACT_LINE " in
+      *" origin=none "*) BRIEF_EXPECTS_ORIGIN=0 ;;
+    esac
+  elif grep -q 'git ls-remote --exit-code --heads origin' "$BRIEF"; then
+    BRIEF_EXPECTS_ORIGIN=1
+  fi
   PROJ_HAS_ORIGIN=
-  if git -C "$PROJ_ABS" rev-parse --git-dir >/dev/null 2>&1; then
+  if [ "$RELAUNCH" -eq 0 ] && git -C "$PROJ_ABS" rev-parse --git-dir >/dev/null 2>&1; then
     if git -C "$PROJ_ABS" remote get-url origin >/dev/null 2>&1; then
       PROJ_HAS_ORIGIN=1
     else
       PROJ_HAS_ORIGIN=0
     fi
   fi
-  if [ "$PROJ_HAS_ORIGIN" = 0 ] && [ "$BRIEF_EXPECTS_ORIGIN" -eq 1 ]; then
+  if [ "$PROJ_HAS_ORIGIN" = 0 ] && [ "$BRIEF_EXPECTS_ORIGIN" = 1 ]; then
     # Only local-only can be re-scaffolded with --no-origin (fm-brief.sh refuses
     # the flag for every remote-required mode), so each direction gets the
     # remediation its mode can actually act on.
@@ -1930,7 +1940,7 @@ if [ "$KIND" = ship ]; then
     fi
     exit 1
   fi
-  if [ "$PROJ_HAS_ORIGIN" = 1 ] && [ "$BRIEF_EXPECTS_ORIGIN" -eq 0 ]; then
+  if [ "$PROJ_HAS_ORIGIN" = 1 ] && [ "$BRIEF_EXPECTS_ORIGIN" = 0 ]; then
     echo "error: origin mismatch for $ID: the brief was scaffolded with --no-origin, but $PROJ_NAME does have an origin remote; remove $BRIEF and re-scaffold it without --no-origin (the scaffold refuses to overwrite an existing brief), or start a fresh task, so its branch step matches the project" >&2
     exit 1
   fi

@@ -407,7 +407,9 @@ test_contract_less_brief_still_pairs_with_the_project_remote() {
   id='pool-contract-less-origin-r11'
   rec=$(make_case_no_origin contract-less-origin "$id")
   read_case_record "$rec"
-  printf 'You are a crewmate.\n\n# Definition of done\n' > "$HOME_DIR/data/$id/brief.md"
+  scaffold_real_brief "$id" --mode local-only
+  grep -v '^Delivery contract: ' "$HOME_DIR/data/$id/brief.md" > "$HOME_DIR/data/$id/brief.legacy"
+  mv "$HOME_DIR/data/$id/brief.legacy" "$HOME_DIR/data/$id/brief.md"
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
   out=$(run_spawn "$id" --mode local-only --yolo off)
