@@ -1,7 +1,7 @@
 ---
 name: catch-up
 description: >-
-  Pull kunchenguid's upstream changes into every forked or locally patched tool this fleet depends on - firstmate, quota-axi, baby-menu, the npm axi tools, and no-mistakes - while preserving our own local changes.
+  Pull kunchenguid's upstream changes into every forked or locally patched tool this fleet depends on - firstmate, quota-axi, the npm axi tools, and no-mistakes - while preserving our own local changes.
   Use when the captain invokes /catch-up, asks to update the open source tools, asks to pull in kunchenguid's changes, or asks how far behind upstream we are.
 user-invocable: true
 metadata:
@@ -14,7 +14,7 @@ Bring our forked and patched copies of kunchenguid's tools up to date without lo
 
 Discovery is by this skill's own frontmatter description alone.
 There is deliberately no pointer in `AGENTS.md`, matching bearings and ahoy, and deliberately no row in `README.md`'s user-invocable skills table.
-Two reasons for the README omission, the second decisive: this skill is fork-specific - it names kunchenguid, `projects/quota-axi`, `projects/baby-menu`, and this fleet's own layout - so a public template installer gains nothing from the pointer; and `README.md` arrives from upstream on every sync, so a fork-only row there becomes a merge conflict on every future upstream merge, in the very file this skill exists to help merge.
+Two reasons for the README omission, the second decisive: this skill is fork-specific - it names kunchenguid, `projects/quota-axi`, and this fleet's own layout - so a public template installer gains nothing from the pointer; and `README.md` arrives from upstream on every sync, so a fork-only row there becomes a merge conflict on every future upstream merge, in the very file this skill exists to help merge.
 Discoverability alone would argue for adding the row; the recurring conflict is what settles it.
 This skill is not the away-mode return catch-up gate: that is `bin/fm-afk-return.sh`, which presents the captain's return catch-up and holds work until its gate clears, and it shares only the word.
 One file outside this skill changed with it, reviewed and accepted as part of this change rather than unreviewed drift: `.agents/skills/bearings/SKILL.md`'s description gave up the bare `catch-up` trigger token for the conversational `"catch me up"`, so that token no longer matches two unrelated skills once `/catch-up` exists.
@@ -22,8 +22,8 @@ One file outside this skill changed with it, reviewed and accepted as part of th
 Two rules govern everything below.
 
 **Our patches are the only copy.**
-`projects/quota-axi` and `projects/baby-menu` have no fork on GitHub - their `origin` points straight at kunchenguid, and our commits exist only on local `main`.
-Never push them, never force, never reset hard, never discard.
+`projects/quota-axi` has no fork on GitHub - its `origin` points straight at kunchenguid, and our commits exist only on local `main`.
+Never push it, never force, never reset hard, never discard.
 A refusal from any guard is a stop-and-investigate result.
 
 **Some of these tools are live under running agents.**
@@ -39,7 +39,6 @@ Re-derive this at every run rather than trusting the table; the shapes change.
 | --- | --- | --- | --- | --- | --- |
 | firstmate | this checkout | true fork | on `main` | `upstream` remote | only via `/updatefirstmate` |
 | quota-axi | `projects/quota-axi` | patched clone, no fork | ahead of `origin/main` | `origin` **is** kunchenguid | **yes** - npm-linked global |
-| baby-menu | `projects/baby-menu` | patched clone, no fork | ahead of `origin/main` | `origin` **is** kunchenguid | no |
 | gh-axi, lavish-axi, chrome-devtools-axi, tasks-axi | npm global | clean install | none | `npm update -g` | **yes** |
 | no-mistakes | `~/.no-mistakes` | managed install, not a git repo | none | `no-mistakes update` | **yes** - shared daemon |
 
@@ -54,17 +53,17 @@ The first resolves the global command to the versioned `lib/node_modules/quota-a
 A registry install has the same first hop, so the first command alone cannot tell a live-linked clone from a plain install.
 If the second hop is not that symlink, the chain is broken, quota-axi is no longer live-shared, and it drops out of the quiet window.
 
-### The two clones firstmate cannot refresh or rebuild on its own
+### The clone firstmate cannot refresh or rebuild on its own
 
-quota-axi and baby-menu are registered `local-only` in `data/projects.md` and their `origin` is upstream itself.
+quota-axi is registered `local-only` in `data/projects.md` and its `origin` is upstream itself.
 For a clone shaped that way, firstmate has no sanctioned path it can deliberately invoke to fetch upstream state for recon, and none to rebuild the live checkout after a landing.
-`bin/fm-fleet-sync.sh` cannot serve either purpose: it returns `skipped: local-only project` before it ever fetches, for any project registered `local-only`, so it is not a viable recon path for these two clones.
+`bin/fm-fleet-sync.sh` cannot serve either purpose: it returns `skipped: local-only project` before it ever fetches, for any project registered `local-only`, so it is not a viable recon path for this clone.
 One fetch does happen on its own, though, and it matters below: `bin/fm-spawn.sh` runs `freshen_spawn_worktree_base` on every ordinary non-relaunch crewmate spawn, which fetches `origin` for the spawned worktree - and that worktree shares the patched clone's ref store, so dispatching a Phase 1 crewmate advances `origin/main` in the clone itself.
 That is a side effect of dispatch, not a recon path firstmate may reach for, which is exactly why Phase 0 records the pre-dispatch SHA.
 Do not engineer around this with a new script or a scout dispatch.
 Where this skill needs a `projects/` command firstmate cannot otherwise run, it names that command and asks the captain for approval in the moment.
 Hard rule 1 requires a sanctioned owner for any state-changing command under `projects/`, and none of these has one - a fetch writes refs there too - so the captain's in-the-moment approval of that one named command is the owner.
-Those points are enumerated, not counted: Phase 0's two fetches (`projects/quota-axi` and `projects/baby-menu`), Phase 2 step 2's quota-axi dependency install and its rebuild, Rollback's reset and its follow-up rebuild, and Cleanup's anchor-tag drop.
+Those points are enumerated, not counted: Phase 0's fetch (`projects/quota-axi`), Phase 2 step 2's quota-axi dependency install and its rebuild, Rollback's reset and its follow-up rebuild, and Cleanup's anchor-tag drop.
 Each one names its literal command, asks fresh for that specific run, grants no standing authority, and never carries over to another command, another clone, or a future run.
 
 ## Phase 0 - Recon
@@ -85,32 +84,30 @@ no-mistakes doctor
 Use `no-mistakes doctor`, not `no-mistakes --version`.
 Both are read-only, but `--version` prints only the installed version and suppresses the `A new version of no-mistakes is available: vX -> vY` banner, so it cannot tell you whether no-mistakes is behind at all - and a run that reports "nothing behind" on that basis would silently skip Cleanup's `no-mistakes update`.
 
-Then refresh the two patched clones.
-Present these two commands to the captain verbatim and wait for approval before running either one:
+Then refresh the patched clone.
+Present this command to the captain verbatim and wait for approval before running it:
 
 ```
 git -C projects/quota-axi fetch origin --quiet
-git -C projects/baby-menu fetch origin --quiet
 ```
 
-On approval, run exactly those two commands and nothing else.
+On approval, run exactly that command and nothing else.
 A fetch writes refs under `projects/`, which hard rule 1 gives firstmate no standing owner for, so this ask is what authorizes it.
 Invoking `/catch-up` is not that approval.
-The approval is given in the moment, for this run, for these two commands only; it grants no standing authority, and it never carries over to another command, another clone, or a future run.
+The approval is given in the moment, for this run, for this command only; it grants no standing authority, and it never carries over to another command, another clone, or a future run.
 Every run asks again.
-Without it there is no fresh `origin/main` for either clone, so say so and report their counts as stale rather than guessing.
+Without it there is no fresh `origin/main`, so say so and report the count as stale rather than guessing.
 
-With origin refreshed, read each clone:
+With origin refreshed, read the clone:
 
 ```
 git -C projects/quota-axi status -sb
-git -C projects/baby-menu status -sb
 ```
 
-For each patched clone, capture the definitive list of what is ours:
+Capture the definitive list of what is ours:
 
 ```
-git -C projects/<name> log --oneline origin/main..main
+git -C projects/quota-axi log --oneline origin/main..main
 ```
 
 That list is the acceptance criteria for the merge.
@@ -135,9 +132,9 @@ If nothing is behind anywhere, say so and stop - there is no Phase 1.
 Every merge happens in an isolated worktree, so live agents are unaffected.
 Dispatch these in parallel; they have no dependency on each other.
 
-### quota-axi and baby-menu - delivery mode `local-only`
+### quota-axi - delivery mode `local-only`
 
-One crewmate each.
+One crewmate.
 The brief must require:
 
 1. Assert the worktree is not the primary clone.
@@ -209,7 +206,7 @@ All of these must hold before touching anything in this phase:
 - No live crewmate anywhere, checked across the main home and every registered secondmate home in `data/secondmates.md`, with one exclusion.
   Check each home's task records, not just this one's.
   The exclusion is this run's own Phase 1 workers, and it applies to a worker only once that worker is confirmed done in its own terms, reconciled against its current state the same way you would check any worker, not merely inferred from the absence of a wake.
-  The three legs have three different done-states, so check each against its own: the quota-axi and baby-menu crewmates are done on a clean ready branch, and the firstmate crewmate is done on a green PR with checks passed - that is what Phase 1 step 5 asks of it, and it never reaches a ready branch, so holding it to the local-only legs' done-state would block the gate forever.
+  The two legs have two different done-states, so check each against its own: the quota-axi crewmate is done on a clean ready branch, and the firstmate crewmate is done on a green PR with checks passed - that is what Phase 1 step 5 asks of it, and it never reaches a ready branch, so holding it to the local-only leg's done-state would block the gate forever.
   A confirmed-done Phase 1 worker is expected to still be here: Cleanup deliberately keeps it alive until Phase 2 has landed and smoke-tested its work, so its presence is not a disturbance.
   A Phase 1 worker that has not reported done blocks the gate exactly like a foreign worker, because landing a half-resolved merge would fast-forward local `main` onto it and, for quota-axi, ship that broken build to every home.
   Every other worker anywhere blocks the gate and must be absent.
@@ -229,15 +226,12 @@ Do not kill anything to force the gate - Phase 1's work is already banked on rea
 
 ### Order - smallest blast radius first, smoke test between each
 
-Both landings below run through `bin/fm-merge-local.sh`, and their authority comes from the project's own registered delivery mode and `yolo` merge posture (AGENTS.md section 7), not from this skill.
-That is a different track from the in-the-moment project-operation approval this skill uses for the Phase 0 fetches, the rebuild, and the rollback reset; the two are deliberately separate, so do not collapse them into one.
-With `yolo` off the captain approves each landing; with it on firstmate lands green, in-scope work itself.
-`bin/fm-project-mode.sh` today reports `local-only off` for both quota-axi and baby-menu, so as things currently stand both landings need the captain's approval through that existing track - re-read the posture each run rather than treating that as fixed here.
+The landing below runs through `bin/fm-merge-local.sh`, and its authority comes from the project's own registered delivery mode and `yolo` merge posture (AGENTS.md section 7), not from this skill.
+That is a different track from the in-the-moment project-operation approval this skill uses for the Phase 0 fetch, the rebuild, and the rollback reset; the two are deliberately separate, so do not collapse them into one.
+With `yolo` off the captain approves the landing; with it on firstmate lands green, in-scope work itself.
+`bin/fm-project-mode.sh` today reports `local-only off` for quota-axi, so as things currently stand that landing needs the captain's approval through that existing track - re-read the posture each run rather than treating that as fixed here.
 
-1. **baby-menu** - land with `bin/fm-merge-local.sh`.
-   Nothing else depends on it.
-   (This one does not actually need the gate; it can also land at the end of Phase 1.)
-2. **quota-axi** - land with `bin/fm-merge-local.sh`, then install dependencies from the merged lockfile and rebuild the clone.
+1. **quota-axi** - land with `bin/fm-merge-local.sh`, then install dependencies from the merged lockfile and rebuild the clone.
    The landing leaves `dist/` stale, and the primary clone's `dist/` is what the global symlink resolves to, so the rebuild has to happen there and nowhere else - a crewmate worktree's `dist/` is not what the global command reads, which is why the Phase 1 brief tells the crewmate to leave the live `dist/` alone.
    Two commands run here, and each is its own named approval point - approving the install never carries into the build.
    Present the first verbatim - `pnpm install --frozen-lockfile`, run in `projects/quota-axi` - and wait for approval.
@@ -251,14 +245,14 @@ With `yolo` off the captain approves each landing; with it on firstmate lands gr
    Each is given in the moment, for this run, for that one command; it grants no standing authority, and it never carries over to another command, another clone, or a future run.
    Every run asks again.
    If either command exits non-zero, stop the run there and report the failure to the captain.
-   Do not run the smoke check, do not move on to step 3, and do not report quota-axi as updated - a failed install or build leaves the pre-merge `dist/` in place, and that is what every home's global command still resolves to.
+   Do not run the smoke check, do not move on to step 2, and do not report quota-axi as updated - a failed install or build leaves the pre-merge `dist/` in place, and that is what every home's global command still resolves to.
    Then smoke the *global* command, and assert two things, not one: `quota-axi` must return real data, and the newest file under `projects/quota-axi/dist/` must be newer than the landing commit (`git -C projects/quota-axi log -1 --format=%cd main`).
    The data assertion alone cannot distinguish a successful rebuild from a failed one, because the stale pre-merge `dist/` answers it just as well - which is exactly how a merge that added a runtime dependency would leave every home running pre-merge code while this run reported quota-axi updated.
    Keep both assertions; do not simplify this back to "the command answers".
    The npm link means a broken build breaks dispatch for every home.
    Do not proceed until both hold.
    If either fails, go straight to Rollback for the approval-gated recovery: reset the clone to the `catch-up/pre-<date>` anchor, then re-run the approved install and rebuild.
-3. **npm axi tools** - `npm update -g gh-axi lavish-axi chrome-devtools-axi tasks-axi`.
+2. **npm axi tools** - `npm update -g gh-axi lavish-axi chrome-devtools-axi tasks-axi`.
    Smoke each one (for example `gh-axi repo view`, `tasks-axi list`, and a bare invocation of `lavish-axi` and `chrome-devtools-axi` to confirm each binary still responds) before moving on.
    Never `npm update -g quota-axi` - that would replace our patched clone with the registry copy and destroy our only copy.
 no-mistakes is deliberately not updated here.
