@@ -1952,8 +1952,8 @@ validate_spawn_worktree() {  # <source> <inspect-target>
   fi
 }
 
-freshen_spawn_worktree_base() {  # <worktree>
-  local worktree=$1 default target expected actual status has_origin
+freshen_spawn_worktree_base() {  # <worktree> <allow-no-origin>
+  local worktree=$1 allow_no_origin=$2 default target expected actual status has_origin
 
   # A pooled worktree is a linked `git worktree` of the project's own clone
   # (same object store and refs), never a separate clone of its own. A
@@ -1965,10 +1965,22 @@ freshen_spawn_worktree_base() {  # <worktree>
   # remote configuration alone: a configured-but-unreachable origin still
   # goes through the fetch below and fails there as a real error, never
   # silently treated as absent.
+  #
+  # A missing origin is only a legitimate base, though, for work that never
+  # needs one: a scout (which delivers a report) or a local-only ship. A
+  # no-mistakes or direct-PR ship must push a branch and open a PR against an
+  # origin, so its absence is a pre-launch refusal here rather than an agent
+  # launched into a task it cannot finish - the same invariant bin/fm-brief.sh
+  # enforces for --no-origin.
   if git -C "$worktree" remote get-url origin >/dev/null 2>&1; then
     has_origin=1
   else
     has_origin=0
+  fi
+
+  if [ "$has_origin" -eq 0 ] && [ "$allow_no_origin" -ne 1 ]; then
+    echo "error: pooled worktree '$worktree' has no origin remote, but this spawn's delivery mode pushes a branch and opens a pull request; add the project's origin or spawn local-only work instead" >&2
+    return 1
   fi
 
   if [ "$has_origin" -eq 1 ]; then
@@ -2513,7 +2525,11 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   validate_spawn_worktree "treehouse get" "$T"
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
-  freshen_spawn_worktree_base "$WT" || exit 1
+  ALLOW_NO_ORIGIN=0
+  if [ "$KIND" = scout ] || { [ "$KIND" = ship ] && [ "$MODE" = local-only ]; }; then
+    ALLOW_NO_ORIGIN=1
+  fi
+  freshen_spawn_worktree_base "$WT" "$ALLOW_NO_ORIGIN" || exit 1
 fi
 
 # Per-task temp root: /tmp/fm-<id>/ with Go's build temp nested at gotmp/. Go won't

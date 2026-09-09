@@ -931,6 +931,10 @@ test_no_origin_checks_local_branch_only() {
   # shellcheck disable=SC2016 # The expected generated Markdown includes literal backticks.
   assert_grep 'this is a respawn: resume it with `git checkout fm/no-origin-a1`.' "$brief" \
     "no-origin ship brief does not resume an existing local task branch"
+  assert_grep 'blocked: could not resume local branch fm/no-origin-a1' "$brief" \
+    "no-origin ship brief has no blocked clause for a failing local-branch checkout"
+  assert_grep 'Do not proceed from the default branch.' "$brief" \
+    "no-origin ship brief does not forbid proceeding from the default branch after a failed resume"
   assert_no_grep 'ls-remote' "$brief" "no-origin ship brief still probes a remote branch"
   assert_no_grep 'fetch origin' "$brief" "no-origin ship brief still fetches origin for its branch step"
   pass "fm-brief: --no-origin scaffolds a local-branch-only first action for a remote-less project"
@@ -964,6 +968,22 @@ test_no_origin_refused_for_scout() {
     "--no-origin with --scout did not name the refusal reason"
   [ ! -e "$home/data/no-origin-scout" ] || fail "--no-origin with --scout left a brief behind despite refusing"
   pass "fm-brief: --no-origin is refused on scout scaffolds, which already need no remote"
+}
+
+test_no_origin_refused_for_secondmate() {
+  local home out status
+  home="$TMP_ROOT/no-origin-secondmate-home"
+  mkdir -p "$home/data"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" no-origin-sm repo --secondmate --no-origin 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "--no-origin with --secondmate should be refused (a charter is not a delivery contract)"
+  assert_contains "$out" "--no-origin applies only to ship briefs" \
+    "--no-origin with --secondmate did not name the refusal"
+  assert_contains "$out" "secondmate charter" \
+    "--no-origin with --secondmate gave a scout-only reason for a charter refusal"
+  [ ! -e "$home/data/no-origin-sm" ] || fail "--no-origin with --secondmate left a brief behind despite refusing"
+  pass "fm-brief: --no-origin refusal states a reason that fits both non-ship kinds"
 }
 
 test_brief_without_no_origin_is_unchanged() {
@@ -1040,5 +1060,6 @@ test_ship_branch_setup_resumes_existing_remote_branch
 test_no_origin_checks_local_branch_only
 test_no_origin_requires_local_only_mode
 test_no_origin_refused_for_scout
+test_no_origin_refused_for_secondmate
 test_brief_without_no_origin_is_unchanged
 test_brief_without_spec_is_unchanged

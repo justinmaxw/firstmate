@@ -59,6 +59,7 @@ Clone into `projects/<name>` and add the registry entry only after the destinati
 A `no-mistakes` or `no-mistakes-prod-only` project must have an `origin` remote and must complete the initialization procedure below, because a conditional policy's product-facing work runs the pipeline while its internal-only work still takes the direct PR.
 A `direct-PR` project needs an `origin` remote but skips no-mistakes initialization.
 A `local-only` project may have no remote and skips no-mistakes initialization.
+When later scaffolding a ship brief for a project with no origin remote, pass `bin/fm-brief.sh`'s `--no-origin` flag (requires `--mode local-only`); its own header and help own the exact mechanics.
 
 ## Create a project
 

@@ -199,7 +199,7 @@ fi
 # left to fail later at push time.
 if [ "$NO_ORIGIN" -eq 1 ]; then
   if [ "$KIND" != ship ]; then
-    echo "error: --no-origin applies only to ship briefs; a scout brief never fetches or tracks a remote branch" >&2
+    echo "error: --no-origin applies only to ship briefs; a scout report and a secondmate charter never fetch or track a remote branch" >&2
     exit 1
   fi
   if [ "$MODE" != local-only ]; then
@@ -543,6 +543,7 @@ if [ "$NO_ORIGIN" -eq 1 ]; then
    - If it prints nothing (exit 1), this is a first spawn: create your branch with \`git checkout -b fm/$ID\`.
    - If it prints a commit, this is a respawn: resume it with \`git checkout fm/$ID\`.
      This project has no remote, so the local branch is the only record of prior work; do not fetch or track an origin branch.
+     If that checkout fails (for example the branch is still checked out in another worktree of this project), append \`blocked: could not resume local branch fm/$ID\` to the status file and stop. Do not proceed from the default branch.
    - If the command itself errors for any other reason, append \`blocked: could not determine whether local branch fm/$ID exists\` to the status file and stop.
 EOF
 else

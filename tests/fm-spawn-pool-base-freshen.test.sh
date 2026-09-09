@@ -327,6 +327,27 @@ test_no_origin_unresolvable_default_branch_refuses_pool() {
   pass "a pooled worktree with no origin remote and no resolvable local default branch refuses clearly"
 }
 
+test_no_origin_remote_required_mode_refuses_before_launch() {
+  local rec id out status before mode
+  for mode in no-mistakes direct-PR; do
+    id="pool-no-origin-${mode}-r9"
+    rec=$(make_case_no_origin "no-origin-required-$mode" "$id")
+    read_case_record "$rec"
+    before=$(git -C "$POOL_DIR" rev-parse HEAD)
+
+    out=$(run_spawn "$id" --mode "$mode" --yolo off)
+    status=$?
+    [ "$status" -ne 0 ] || fail "$mode spawn succeeded against a project with no origin remote"
+    assert_contains "$out" "has no origin remote" \
+      "$mode spawn did not clearly refuse a missing origin before launch"
+    assert_not_contains "$out" "spawned $id" "$mode spawn launched a worker despite having no origin to push to"
+    [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
+      || fail "$mode spawn moved the pooled worktree while refusing a missing origin"
+    [ ! -e "$HOME_DIR/data/$id/.meta" ] || fail "$mode spawn recorded task metadata despite refusing"
+  done
+  pass "a remote-required delivery mode refuses a project with no origin remote before any agent launches"
+}
+
 test_stale_pool_base_refreshes_before_branching
 test_non_main_default_branch_refreshes_before_branching
 test_direct_pr_and_scout_refresh_before_launch
@@ -336,5 +357,6 @@ test_unreachable_origin_refuses_stale_pool_base
 test_no_origin_scout_and_local_only_refresh_before_launch
 test_no_origin_dirty_pool_refuses_without_discarding_work
 test_no_origin_unresolvable_default_branch_refuses_pool
+test_no_origin_remote_required_mode_refuses_before_launch
 
 echo "# all fm-spawn-pool-base-freshen tests passed"
