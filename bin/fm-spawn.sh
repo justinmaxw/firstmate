@@ -9,9 +9,14 @@
 #   per task at intake (AGENTS.md section 7); data/projects.md holds the captain's
 #   standing posture as context, not as this task's answer, so a spawn never looks
 #   the mode up. A ship spawn additionally reads the brief's recorded
-#   "Delivery contract: mode=<mode>" line and REFUSES a mismatch, so the worker's
+#   "Delivery contract: mode=<mode>[ origin=none]" line and REFUSES a mismatch,
+#   including a brief whose recorded origin expectation disagrees with the
+#   project's actual remote, so the worker's
 #   instructions and the recorded task delivery cannot drift apart; a brief
-#   scaffolded before that line existed warns once and launches on the flag. When
+#   scaffolded before that line existed warns once and launches on the flag,
+#   unless the project has no origin at all and that brief really does carry the
+#   remote branch step, which the pairing check refuses. A --relaunch resumes an
+#   already-cleared brief and skips the pairing check. When
 #   the explicit mode carries less rigor than the project's standing posture, a
 #   loud one-line deviation notice is printed and the spawn continues.
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
@@ -140,9 +145,16 @@
 #   Ship/scout spawns refuse to launch unless the resolved task path is a real
 #   git worktree root distinct from the primary project checkout.
 #   Before a fresh ship or scout worker starts, its clean task worktree fetches
-#   origin, resolves the current remote default branch, and resets to its tip.
-#   An unreachable origin, unresolved default branch, or non-clean worktree
-#   refuses the spawn rather than risking a PR based on stale history.
+#   origin, resolves the current remote default branch, and resets to its tip;
+#   a project with no origin remote at all (a committed local-only project)
+#   resets to its own local default branch instead, since the pooled worktree
+#   already shares that project's object store and refs. That local fallback is
+#   allowed only for a scout or a local-only ship: a no-mistakes or direct-PR
+#   ship pushes a branch and opens a PR, so a missing origin refuses the spawn
+#   before any agent launches. An unreachable
+#   origin, unresolved default branch, or non-clean worktree refuses the
+#   spawn rather than risking a PR (or, for a local-only project, a ready
+#   branch) based on stale history.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
@@ -1875,15 +1887,61 @@ delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task
 
 # Brief/spawn delivery agreement, checked before any endpoint exists.
 # fm-brief.sh records a ship brief's mode as a fixed "Delivery contract: mode=<mode>"
-# line. A spawn that disagrees would launch a worker whose instructions and whose
+# line, suffixed " origin=none" when --no-origin scaffolded the local-branch-only
+# branch step. A spawn that disagrees would launch a worker whose instructions and whose
 # recorded task delivery differ, which is the exact drift this contract prevents.
+# The same line therefore also pairs the brief's branch step with the project's real
+# remote: a remote-expecting brief against a remote-less project would launch a worker
+# straight into `git ls-remote origin` failing, and a no-origin brief against a project
+# that does have an origin records a branch step its own project contradicts.
 if [ "$KIND" = ship ]; then
   PROJ_NAME=$(basename "$PROJ_ABS")
-  BRIEF_MODE=$(sed -n 's/^Delivery contract: mode=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
+  CONTRACT_LINE=$(sed -n 's/^Delivery contract: //p' "$BRIEF" | head -n 1)
+  BRIEF_MODE=$(printf '%s\n' "$CONTRACT_LINE" | sed -n 's/^mode=\([^ ]*\).*$/\1/p')
   if [ -z "$BRIEF_MODE" ]; then
     echo "warning: $BRIEF records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode $MODE - confirm its definition of done matches" >&2
   elif [ "$BRIEF_MODE" != "$MODE" ]; then
     echo "error: delivery mismatch for $ID: the brief says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
+    exit 1
+  fi
+
+  # A contract-less brief carries whatever branch step it was scaffolded with -
+  # a legacy ship brief probes a remote, while a promoted scout's brief (which
+  # fm-promote.sh leaves in place) has no branch step at all and is origin-
+  # agnostic in both directions - so read the probe the worker would actually
+  # run rather than assuming one. A relaunch is exempt
+  # entirely: it resumes a brief and worktree this check already cleared at first
+  # spawn, and no mid-flight task should be told to delete its brief.
+  BRIEF_EXPECTS_ORIGIN=
+  if [ -n "$CONTRACT_LINE" ]; then
+    BRIEF_EXPECTS_ORIGIN=1
+    case " $CONTRACT_LINE " in
+      *" origin=none "*) BRIEF_EXPECTS_ORIGIN=0 ;;
+    esac
+  elif grep -q 'git ls-remote --exit-code --heads origin' "$BRIEF"; then
+    BRIEF_EXPECTS_ORIGIN=1
+  fi
+  PROJ_HAS_ORIGIN=
+  if [ "$RELAUNCH" -eq 0 ] && git -C "$PROJ_ABS" rev-parse --git-dir >/dev/null 2>&1; then
+    if git -C "$PROJ_ABS" remote get-url origin >/dev/null 2>&1; then
+      PROJ_HAS_ORIGIN=1
+    else
+      PROJ_HAS_ORIGIN=0
+    fi
+  fi
+  if [ "$PROJ_HAS_ORIGIN" = 0 ] && [ "$BRIEF_EXPECTS_ORIGIN" = 1 ]; then
+    # Only local-only can be re-scaffolded with --no-origin (fm-brief.sh refuses
+    # the flag for every remote-required mode), so each direction gets the
+    # remediation its mode can actually act on.
+    if [ "$MODE" = local-only ]; then
+      echo "error: origin mismatch for $ID: $PROJ_NAME has no origin remote, but the brief's branch step probes one and would block the worker immediately; remove $BRIEF and re-scaffold it with fm-brief.sh --no-origin (the scaffold refuses to overwrite an existing brief), or start a fresh task" >&2
+    else
+      echo "error: origin mismatch for $ID: $PROJ_NAME has no origin remote, but this spawn's delivery mode pushes a branch and opens a pull request; add the project's origin or spawn local-only work instead" >&2
+    fi
+    exit 1
+  fi
+  if [ "$PROJ_HAS_ORIGIN" = 1 ] && [ "$BRIEF_EXPECTS_ORIGIN" = 0 ]; then
+    echo "error: origin mismatch for $ID: the brief was scaffolded with --no-origin, but $PROJ_NAME does have an origin remote; remove $BRIEF and re-scaffold it without --no-origin (the scaffold refuses to overwrite an existing brief), or start a fresh task, so its branch step matches the project" >&2
     exit 1
   fi
   # The registry holds the captain's standing posture, so dropping below it is
@@ -1948,24 +2006,63 @@ validate_spawn_worktree() {  # <source> <inspect-target>
   fi
 }
 
-freshen_spawn_worktree_base() {  # <worktree>
-  local worktree=$1 default target expected actual status
-  if ! git -C "$worktree" fetch --quiet origin; then
-    echo "error: could not fetch origin for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
+freshen_spawn_worktree_base() {  # <worktree> <allow-no-origin>
+  local worktree=$1 allow_no_origin=$2 default target expected actual status has_origin
+
+  # A pooled worktree is a linked `git worktree` of the project's own clone
+  # (same object store and refs), never a separate clone of its own. A
+  # committed local-only project therefore has no "origin" to fetch at all -
+  # this is the exact command that fails with "'origin' does not appear to
+  # be a git repository" when the project has no remote - and its local
+  # default branch ref is already the freshest truth available, shared with
+  # every worktree of that repo with no fetch delay. Distinguish that case by
+  # remote configuration alone: a configured-but-unreachable origin still
+  # goes through the fetch below and fails there as a real error, never
+  # silently treated as absent.
+  #
+  # A missing origin is only a legitimate base, though, for work that never
+  # needs one: a scout (which delivers a report) or a local-only ship. A
+  # no-mistakes or direct-PR ship must push a branch and open a PR against an
+  # origin, so its absence is a pre-launch refusal here rather than an agent
+  # launched into a task it cannot finish - the same invariant bin/fm-brief.sh
+  # enforces for --no-origin.
+  if git -C "$worktree" remote get-url origin >/dev/null 2>&1; then
+    has_origin=1
+  else
+    has_origin=0
+  fi
+
+  if [ "$has_origin" -eq 0 ] && [ "$allow_no_origin" -ne 1 ]; then
+    echo "error: pooled worktree '$worktree' has no origin remote, but this spawn's delivery mode pushes a branch and opens a pull request; add the project's origin or spawn local-only work instead" >&2
     return 1
   fi
-  if ! git -C "$worktree" remote set-head origin --auto >/dev/null 2>&1; then
-    echo "error: could not resolve origin's current default branch for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
-    return 1
+
+  if [ "$has_origin" -eq 1 ]; then
+    if ! git -C "$worktree" fetch --quiet origin; then
+      echo "error: could not fetch origin for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
+      return 1
+    fi
+    if ! git -C "$worktree" remote set-head origin --auto >/dev/null 2>&1; then
+      echo "error: could not resolve origin's current default branch for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
+      return 1
+    fi
   fi
   default=$(default_branch "$worktree") || {
-    echo "error: could not determine origin's default branch for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
+    echo "error: could not determine the default branch for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
     return 1
   }
-  target="origin/$default"
-  if ! git -C "$worktree" fetch --quiet origin "+refs/heads/$default:refs/remotes/origin/$default"; then
-    echo "error: could not fetch '$target' for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
-    return 1
+  if [ "$has_origin" -eq 1 ]; then
+    target="origin/$default"
+    if ! git -C "$worktree" fetch --quiet origin "+refs/heads/$default:refs/remotes/origin/$default"; then
+      echo "error: could not fetch '$target' for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
+      return 1
+    fi
+  else
+    target="refs/heads/$default"
+    if ! git -C "$worktree" show-ref --verify --quiet "$target"; then
+      echo "error: local default branch '$default' does not exist for pooled worktree '$worktree' with no origin remote; refusing to launch from a potentially stale base" >&2
+      return 1
+    fi
   fi
   expected=$(git -C "$worktree" rev-parse --verify --quiet "$target^{commit}" 2>/dev/null) || {
     echo "error: '$target' is not a commit for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
@@ -2482,7 +2579,11 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   validate_spawn_worktree "treehouse get" "$T"
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
-  freshen_spawn_worktree_base "$WT" || exit 1
+  ALLOW_NO_ORIGIN=0
+  if [ "$KIND" = scout ] || { [ "$KIND" = ship ] && [ "$MODE" = local-only ]; }; then
+    ALLOW_NO_ORIGIN=1
+  fi
+  freshen_spawn_worktree_base "$WT" "$ALLOW_NO_ORIGIN" || exit 1
 fi
 
 # Per-task temp root: /tmp/fm-<id>/ with Go's build temp nested at gotmp/. Go won't

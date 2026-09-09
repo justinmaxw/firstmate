@@ -67,6 +67,38 @@ make_case() {
   printf '%s\n' "$case_dir|$home|$project|$pool|$fakebin|$initial|$default"
 }
 
+# A committed local-only project with no origin remote at all. The pooled
+# worktree is still a linked `git worktree` of $project (same object store and
+# refs, exactly like the origin-backed fixture above), so advancing
+# $project's own local default branch directly - no publisher, no push, no
+# origin - is what "stale pool base" means when there is no remote to fetch.
+make_case_no_origin() {
+  local name=$1 id=$2 default=${3:-main} case_dir home project pool fakebin initial
+  case_dir="$TMP_ROOT/$name"
+  home="$case_dir/home"
+  project="$case_dir/project"
+  pool="$case_dir/pool"
+  fakebin=$(make_spawn_fakebin "$case_dir/fake")
+
+  mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
+  printf 'codex\n' > "$home/config/crew-harness"
+  printf 'brief for %s\n' "$id" > "$home/data/$id/brief.md"
+  touch "$home/state/.last-watcher-beat"
+
+  git init --quiet -b "$default" "$project"
+  printf 'base\n' > "$project/README.md"
+  git -C "$project" add README.md
+  git -C "$project" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm initial
+  initial=$(git -C "$project" rev-parse HEAD)
+  git -C "$project" worktree add --quiet --detach "$pool" "$initial"
+
+  printf 'must survive a newly spawned branch\n' > "$project/advanced-main.txt"
+  git -C "$project" add advanced-main.txt
+  git -C "$project" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm advance-main
+
+  printf '%s\n' "$case_dir|$home|$project|$pool|$fakebin|$initial|$default"
+}
+
 read_case_record() {
   IFS='|' read -r CASE_DIR HOME_DIR PROJECT_DIR POOL_DIR FAKEBIN_DIR INITIAL_SHA DEFAULT_BRANCH <<EOF
 $1
@@ -227,11 +259,185 @@ test_unresolved_remote_default_refuses_pool() {
   pass "an unresolved remote default branch refuses the pooled worktree"
 }
 
+test_no_origin_scout_and_local_only_refresh_before_launch() {
+  local rec id out status current branch_head contract
+  for contract in scout local-only; do
+    id="pool-no-origin-${contract}-r6"
+    rec=$(make_case_no_origin "no-origin-$contract" "$id")
+    read_case_record "$rec"
+    [ -z "$(git -C "$PROJECT_DIR" remote)" ] \
+      || fail "fixture for $contract unexpectedly configured an origin remote"
+
+    if [ "$contract" = scout ]; then
+      out=$(run_spawn "$id" --scout)
+    else
+      scaffold_real_brief "$id" --mode local-only --no-origin
+      out=$(run_spawn "$id" --mode local-only --yolo off)
+    fi
+    status=$?
+    expect_code 0 "$status" "$contract spawn should refresh a stale pooled worktree with no origin remote"
+    current=$(git -C "$PROJECT_DIR" rev-parse "refs/heads/$DEFAULT_BRANCH")
+    branch_head=$(git -C "$POOL_DIR" rev-parse HEAD)
+    [ "$branch_head" = "$current" ] \
+      || fail "$contract spawn did not refresh to the project's current local $DEFAULT_BRANCH"
+    [ "$branch_head" != "$INITIAL_SHA" ] \
+      || fail "fixture did not prove local $DEFAULT_BRANCH advanced past the pool base"
+    assert_grep 'must survive a newly spawned branch' "$POOL_DIR/advanced-main.txt" \
+      "$contract spawn omitted content committed directly to the local default branch"
+    if [ "${FM_TEST_EVIDENCE:-0}" = 1 ]; then
+      printf '# observed no-origin %s spawn: %s\n' "$contract" "$(printf '%s\n' "$out" | tail -n 1)"
+    fi
+  done
+  pass "a stale pooled worktree with no origin remote refreshes to the project's current local default branch for scout and local-only ship"
+}
+
+test_no_origin_dirty_pool_refuses_without_discarding_work() {
+  local rec id out status before
+  id='pool-no-origin-dirty-r7'
+  rec=$(make_case_no_origin dirty-no-origin "$id")
+  read_case_record "$rec"
+  scaffold_real_brief "$id" --mode local-only --no-origin
+  before=$(git -C "$POOL_DIR" rev-parse HEAD)
+  printf 'keep this local work\n' > "$POOL_DIR/uncommitted.txt"
+
+  out=$(run_spawn "$id" --mode local-only --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn succeeded despite a dirty pooled worktree with no origin remote"
+  assert_contains "$out" "is not clean" \
+    "spawn did not clearly refuse a dirty pooled worktree with no origin remote"
+  [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
+    || fail "spawn moved HEAD while refusing a dirty pooled worktree with no origin remote"
+  assert_grep 'keep this local work' "$POOL_DIR/uncommitted.txt" \
+    "spawn discarded uncommitted work while refusing the no-origin pool"
+  pass "a dirty pooled worktree with no origin remote is refused without discarding its local work"
+}
+
+test_no_origin_unresolvable_default_branch_refuses_pool() {
+  local rec id out status before
+  id='pool-no-origin-unresolvable-r8'
+  rec=$(make_case_no_origin unresolvable-no-origin "$id" trunk)
+  read_case_record "$rec"
+  scaffold_real_brief "$id" --mode local-only --no-origin
+  before=$(git -C "$POOL_DIR" rev-parse HEAD)
+
+  out=$(run_spawn "$id" --mode local-only --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn succeeded despite no origin and no local main/master branch"
+  assert_contains "$out" "could not determine the default branch" \
+    "spawn did not clearly refuse an unresolvable local default branch with no origin"
+  [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
+    || fail "spawn moved HEAD after failing to resolve the local default branch"
+  pass "a pooled worktree with no origin remote and no resolvable local default branch refuses clearly"
+}
+
+test_no_origin_remote_required_mode_refuses_before_launch() {
+  local rec id out status before mode
+  for mode in no-mistakes direct-PR; do
+    id="pool-no-origin-${mode}-r9"
+    rec=$(make_case_no_origin "no-origin-required-$mode" "$id")
+    read_case_record "$rec"
+    scaffold_real_brief "$id" --mode "$mode"
+    before=$(git -C "$POOL_DIR" rev-parse HEAD)
+
+    out=$(run_spawn "$id" --mode "$mode" --yolo off)
+    status=$?
+    [ "$status" -ne 0 ] || fail "$mode spawn succeeded against a project with no origin remote"
+    assert_contains "$out" "has no origin remote" \
+      "$mode spawn did not clearly refuse a missing origin before launch"
+    assert_contains "$out" "add the project's origin or spawn local-only work instead" \
+      "$mode spawn offered remediation its own mode cannot use"
+    assert_not_contains "$out" "--no-origin" \
+      "$mode spawn suggested --no-origin, which fm-brief.sh refuses for a remote-required mode"
+    assert_not_contains "$out" "spawned $id" "$mode spawn launched a worker despite having no origin to push to"
+    [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
+      || fail "$mode spawn moved the pooled worktree while refusing a missing origin"
+    [ ! -e "$HOME_DIR/data/$id/.meta" ] || fail "$mode spawn recorded task metadata despite refusing"
+  done
+  pass "a remote-required delivery mode refuses a project with no origin remote before any agent launches"
+}
+
+scaffold_real_brief() {
+  local id=$1
+  shift
+  rm -rf "$HOME_DIR/data/$id"
+  FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    "$ROOT/bin/fm-brief.sh" "$id" "$PROJECT_DIR" "$@" >/dev/null \
+    || fail "scaffolding a real brief for $id exited non-zero"
+}
+
+test_no_origin_brief_and_project_remote_must_agree() {
+  local rec id out status before
+  id='pool-brief-origin-drift-r10'
+  rec=$(make_case_no_origin brief-origin-drift "$id")
+  read_case_record "$rec"
+  scaffold_real_brief "$id" --mode local-only
+  before=$(git -C "$POOL_DIR" rev-parse HEAD)
+
+  out=$(run_spawn "$id" --mode local-only --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn launched a worker whose brief probes an origin the project does not have"
+  assert_contains "$out" "origin mismatch for $id" \
+    "spawn did not clearly refuse a remote-expecting brief on a remote-less project"
+  assert_not_contains "$out" "spawned $id" "spawn launched despite the brief/project origin mismatch"
+  [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
+    || fail "spawn moved the pooled worktree while refusing the origin mismatch"
+
+  scaffold_real_brief "$id" --mode local-only --no-origin
+  out=$(run_spawn "$id" --mode local-only --yolo off)
+  status=$?
+  expect_code 0 "$status" "a --no-origin brief on a remote-less project should launch"
+  assert_contains "$out" "spawned $id" "the paired --no-origin brief did not launch"
+
+  id='pool-brief-origin-drift-remote-r10'
+  rec=$(make_case brief-origin-drift-remote "$id")
+  read_case_record "$rec"
+  scaffold_real_brief "$id" --mode local-only --no-origin
+  out=$(run_spawn "$id" --mode local-only --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn launched a --no-origin brief against a project that does have an origin"
+  assert_contains "$out" "origin mismatch for $id" \
+    "spawn did not clearly refuse a --no-origin brief on a remote-backed project"
+  pass "a ship brief's recorded origin expectation must agree with the project's actual remote"
+}
+
+test_contract_less_brief_still_pairs_with_the_project_remote() {
+  local rec id out status before
+  id='pool-contract-less-origin-r11'
+  rec=$(make_case_no_origin contract-less-origin "$id")
+  read_case_record "$rec"
+  scaffold_real_brief "$id" --mode local-only
+  grep -v '^Delivery contract: ' "$HOME_DIR/data/$id/brief.md" > "$HOME_DIR/data/$id/brief.legacy"
+  mv "$HOME_DIR/data/$id/brief.legacy" "$HOME_DIR/data/$id/brief.md"
+  before=$(git -C "$POOL_DIR" rev-parse HEAD)
+
+  out=$(run_spawn "$id" --mode local-only --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a contract-less brief launched a worker into a remote probe the project cannot answer"
+  assert_contains "$out" "origin mismatch for $id" \
+    "a contract-less brief on a remote-less project was not refused"
+  assert_contains "$out" "--no-origin" \
+    "a local-only contract-less refusal did not point at the remediation its mode can use"
+  assert_contains "$out" "remove $HOME_DIR/data/$id/brief.md" \
+    "the refusal prescribed a re-scaffold without naming the existing brief the scaffold refuses to overwrite"
+  assert_not_contains "$out" "spawned $id" "spawn launched despite the contract-less origin mismatch"
+  [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
+    || fail "spawn moved the pooled worktree while refusing a contract-less origin mismatch"
+  pass "a brief with no delivery contract line is still paired against the project's actual remote"
+}
+
 test_stale_pool_base_refreshes_before_branching
 test_non_main_default_branch_refreshes_before_branching
 test_direct_pr_and_scout_refresh_before_launch
 test_dirty_pool_refuses_without_discarding_work
 test_unresolved_remote_default_refuses_pool
 test_unreachable_origin_refuses_stale_pool_base
+test_no_origin_scout_and_local_only_refresh_before_launch
+test_no_origin_dirty_pool_refuses_without_discarding_work
+test_no_origin_unresolvable_default_branch_refuses_pool
+test_no_origin_remote_required_mode_refuses_before_launch
+test_no_origin_brief_and_project_remote_must_agree
+test_contract_less_brief_still_pairs_with_the_project_remote
 
 echo "# all fm-spawn-pool-base-freshen tests passed"

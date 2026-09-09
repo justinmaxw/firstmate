@@ -914,6 +914,99 @@ test_ship_branch_setup_resumes_existing_remote_branch() {
   pass "fm-brief: ship branch setup creates first spawns and safely resumes remote branches"
 }
 
+test_no_origin_checks_local_branch_only() {
+  local home brief
+  home="$TMP_ROOT/no-origin-home"
+  mkdir -p "$home/data"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" no-origin-a1 repo --mode local-only --no-origin >/dev/null \
+    || fail "--no-origin local-only scaffold exited non-zero"
+  brief="$home/data/no-origin-a1/brief.md"
+
+  assert_grep 'git rev-parse --verify --quiet "refs/heads/fm/no-origin-a1"' "$brief" \
+    "no-origin ship brief does not check the local task branch"
+  # shellcheck disable=SC2016 # The expected generated Markdown includes literal backticks.
+  assert_grep 'this is a first spawn: create your branch with `git checkout -b fm/no-origin-a1`.' "$brief" \
+    "no-origin ship brief changed the first-spawn branch creation path"
+  # shellcheck disable=SC2016 # The expected generated Markdown includes literal backticks.
+  assert_grep 'this is a respawn: resume it with `git checkout fm/no-origin-a1`.' "$brief" \
+    "no-origin ship brief does not resume an existing local task branch"
+  assert_grep 'blocked: could not resume local branch fm/no-origin-a1' "$brief" \
+    "no-origin ship brief has no blocked clause for a failing local-branch checkout"
+  assert_grep 'Do not proceed from the default branch.' "$brief" \
+    "no-origin ship brief does not forbid proceeding from the default branch after a failed resume"
+  assert_no_grep 'ls-remote' "$brief" "no-origin ship brief still probes a remote branch"
+  assert_no_grep 'fetch origin' "$brief" "no-origin ship brief still fetches origin for its branch step"
+  pass "fm-brief: --no-origin scaffolds a local-branch-only first action for a remote-less project"
+}
+
+test_no_origin_requires_local_only_mode() {
+  local home out status
+  home="$TMP_ROOT/no-origin-mode-home"
+  mkdir -p "$home/data"
+
+  for mode in no-mistakes direct-PR; do
+    out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "no-origin-$mode" repo --mode "$mode" --no-origin 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "--no-origin with --mode $mode should be refused (this project has no remote to push to)"
+    assert_contains "$out" "--no-origin requires --mode local-only" \
+      "--no-origin with --mode $mode did not name the required mode"
+    [ ! -e "$home/data/no-origin-$mode" ] || fail "--no-origin with --mode $mode left a brief behind despite refusing"
+  done
+  pass "fm-brief: --no-origin is refused for remote-required modes rather than silently scaffolding them"
+}
+
+test_no_origin_refused_for_scout() {
+  local home out status
+  home="$TMP_ROOT/no-origin-scout-home"
+  mkdir -p "$home/data"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" no-origin-scout repo --scout --no-origin 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "--no-origin with --scout should be refused (a scout brief never touches a remote)"
+  assert_contains "$out" "--no-origin applies only to ship briefs" \
+    "--no-origin with --scout did not name the refusal reason"
+  [ ! -e "$home/data/no-origin-scout" ] || fail "--no-origin with --scout left a brief behind despite refusing"
+  pass "fm-brief: --no-origin is refused on scout scaffolds, which already need no remote"
+}
+
+test_no_origin_refused_for_secondmate() {
+  local home out status
+  home="$TMP_ROOT/no-origin-secondmate-home"
+  mkdir -p "$home/data"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" no-origin-sm repo --secondmate --no-origin 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "--no-origin with --secondmate should be refused (a charter is not a delivery contract)"
+  assert_contains "$out" "--no-origin applies only to ship briefs" \
+    "--no-origin with --secondmate did not name the refusal"
+  assert_contains "$out" "secondmate charter" \
+    "--no-origin with --secondmate gave a scout-only reason for a charter refusal"
+  [ ! -e "$home/data/no-origin-sm" ] || fail "--no-origin with --secondmate left a brief behind despite refusing"
+  pass "fm-brief: --no-origin refusal states a reason that fits both non-ship kinds"
+}
+
+test_brief_without_no_origin_is_unchanged() {
+  local home a b
+  home="$TMP_ROOT/no-origin-identity-home"
+  mkdir -p "$home/data"
+  a="$TMP_ROOT/no-origin-identity-a.md"
+  b="$TMP_ROOT/no-origin-identity-b.md"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" no-origin-identity repo --mode local-only >/dev/null \
+    || fail "plain local-only scaffold exited non-zero"
+  cp "$home/data/no-origin-identity/brief.md" "$a"
+
+  rm -rf "$home/data/no-origin-identity"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" no-origin-identity repo --mode local-only >/dev/null \
+    || fail "plain local-only scaffold exited non-zero on the second run"
+  cp "$home/data/no-origin-identity/brief.md" "$b"
+  cmp -s "$a" "$b" || fail "a local-only brief scaffolded without --no-origin is not byte-stable"
+  assert_grep 'git ls-remote --exit-code --heads origin' "$a" \
+    "omitting --no-origin must leave the remote-branch check exactly as it was"
+  pass "fm-brief: a local-only brief scaffolded without --no-origin carries no trace of the no-origin path"
+}
+
 test_brief_without_spec_is_unchanged() {
   local home a b
   home="$TMP_ROOT/spec-identity-home"
@@ -964,4 +1057,9 @@ test_spec_flag_carries_criteria_and_pins_enforcement
 test_spec_ac_selects_the_tasks_own_criteria
 test_spec_flag_is_refused_where_it_does_not_apply
 test_ship_branch_setup_resumes_existing_remote_branch
+test_no_origin_checks_local_branch_only
+test_no_origin_requires_local_only_mode
+test_no_origin_refused_for_scout
+test_no_origin_refused_for_secondmate
+test_brief_without_no_origin_is_unchanged
 test_brief_without_spec_is_unchanged

@@ -6,9 +6,16 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab] [--spec <path> [--spec-ac <ids>]]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--no-origin] [--herdr-lab] [--spec <path> [--spec-ac <ids>]]
 #        fm-brief.sh <task-id> <repo-name> --scout [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
+#   --no-origin scaffolds the branch step for a genuinely remote-less local
+#   project: the worker checks its local branch instead of a remote one and
+#   never fetches or tracks origin. It requires --mode local-only (no-mistakes
+#   and direct-PR both push to an origin this project does not have) and is
+#   refused on --scout, whose branchless contract already needs no remote.
+#   The caller (project registration, not this script) is the one place that
+#   knows a project has no origin, so the flag must be passed explicitly.
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
 #   --secondmate writes a persistent secondmate charter. The project list
@@ -49,8 +56,10 @@
 # no-mistakes-prod-only is a registry policy, not a task mode; resolve it to one of
 # the three concrete modes at intake before calling this script.
 # The generated ship brief records the chosen mode as a fixed machine-readable
-# "Delivery contract: mode=<mode>" line. bin/fm-spawn.sh reads that line and refuses
-# to launch a ship task whose explicit --mode disagrees, so an adjusted brief and the
+# "Delivery contract: mode=<mode>" line, suffixed " origin=none" when --no-origin
+# scaffolded the local-branch-only step. bin/fm-spawn.sh reads that line and refuses
+# to launch a ship task whose explicit --mode disagrees, or whose recorded origin
+# expectation disagrees with the project's actual remote, so an adjusted brief and the
 # recorded task metadata cannot drift apart.
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
 # The branch step resumes an existing remote task branch at its fetched commit,
@@ -121,6 +130,7 @@ fi
 KIND=ship
 HERDR_LAB=0
 NO_PROJECTS=0
+NO_ORIGIN=0
 MODE=
 MODE_SET=0
 SPEC=
@@ -146,6 +156,7 @@ for a in "$@"; do
     --secondmate) KIND=secondmate ;;
     --herdr-lab) HERDR_LAB=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
+    --no-origin) NO_ORIGIN=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --spec) want_value=spec ;;
@@ -178,6 +189,25 @@ if [ "$KIND" = ship ]; then
 elif [ "$MODE_SET" -eq 1 ]; then
   echo "error: --mode applies only to ship briefs; a scout delivers a report and a secondmate charter is not a delivery contract" >&2
   exit 1
+fi
+
+# --no-origin scaffolds the branch step for a genuinely remote-less local
+# project (AGENTS.md hard rule 1's local-project workflows). A scout brief never
+# fetches or tracks a remote branch, so the flag has nothing to change there;
+# restricting it to ship keeps a caller from believing it altered scout text it
+# did not touch. Only local-only can honor it: no-mistakes and direct-PR both
+# require pushing the finished branch to an origin that does not exist, so a
+# remote-required mode paired with --no-origin is refused here rather than
+# left to fail later at push time.
+if [ "$NO_ORIGIN" -eq 1 ]; then
+  if [ "$KIND" != ship ]; then
+    echo "error: --no-origin applies only to ship briefs; a scout report and a secondmate charter never fetch or track a remote branch" >&2
+    exit 1
+  fi
+  if [ "$MODE" != local-only ]; then
+    echo "error: --no-origin requires --mode local-only; $MODE ships through a remote this project does not have" >&2
+    exit 1
+  fi
 fi
 
 # --spec binds a ship task to a captain-approved spec (docs/spec-workflow.md).
@@ -444,6 +474,11 @@ fi
 # delivery mode, validated above. The generated DOD opens with the fixed
 # "Delivery contract: mode=<mode>" line that bin/fm-spawn.sh checks against its own
 # explicit --mode before launching.
+ORIGIN_CONTRACT=""
+if [ "$NO_ORIGIN" -eq 1 ]; then
+  ORIGIN_CONTRACT=" origin=none"
+fi
+
 case "$MODE" in
   direct-PR)
     SETUP2=""
@@ -462,7 +497,7 @@ EOF
     RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the merge into local \`main\`."
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
-Delivery contract: mode=local-only
+Delivery contract: mode=local-only$ORIGIN_CONTRACT
 This task ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
@@ -503,6 +538,35 @@ esac
 DOD=${DOD%$'\n'}
 DOD="$DOD$SPEC_DOD"
 
+# The pooled worktree shares its object store and refs with the project's own
+# clone (a linked `git worktree`), so a genuinely remote-less project's local
+# branch is never stale the way a remote one can be: there is no other clone
+# for it to have diverged from. Checking it directly is therefore exact, not
+# a fallback approximation, and needs no fetch or track step at all.
+if [ "$NO_ORIGIN" -eq 1 ]; then
+  IFS= read -r -d '' BRANCH_STEP <<EOF || true
+1. First action: determine whether this task already has a branch.
+   Run \`git rev-parse --verify --quiet "refs/heads/fm/$ID"\`.
+   - If it prints nothing (exit 1), this is a first spawn: create your branch with \`git checkout -b fm/$ID\`.
+   - If it prints a commit, this is a respawn: resume it with \`git checkout fm/$ID\`.
+     This project has no remote, so the local branch is the only record of prior work; do not fetch or track an origin branch.
+     If that checkout fails (for example the branch is still checked out in another worktree of this project), append \`blocked: could not resume local branch fm/$ID\` to the status file and stop. Do not proceed from the default branch.
+   - If the command itself errors for any other reason, append \`blocked: could not determine whether local branch fm/$ID exists\` to the status file and stop.
+EOF
+else
+  IFS= read -r -d '' BRANCH_STEP <<EOF || true
+1. First action: determine whether this task already has a remote branch.
+   Run \`git ls-remote --exit-code --heads origin "refs/heads/fm/$ID"\`.
+   - If it exits 2, this is a first spawn: create your branch with \`git checkout -b fm/$ID\`.
+   - If it succeeds, this is a respawn: run \`git fetch origin "refs/heads/fm/$ID:refs/remotes/origin/fm/$ID"\` and set \`expected=\$(git rev-parse --verify "refs/remotes/origin/fm/$ID^{commit}")\`.
+     If the local branch already exists (\`git rev-parse --verify --quiet "refs/heads/fm/$ID"\` succeeds - normal on relaunch, not a blocker), resume it with \`git checkout fm/$ID\`; otherwise resume it with \`git checkout -b fm/$ID --track "origin/fm/$ID"\`.
+     Run \`actual=\$(git rev-parse --verify HEAD)\` and confirm \`[ "\$actual" = "\$expected" ]\`.
+     If fetching, resolving either commit, the checkout, or that comparison fails, append \`blocked: could not resume fm/$ID at its recorded remote commit\` to the status file and stop. Do not proceed from the default branch.
+   - For any other exit status, append \`blocked: could not determine whether remote branch fm/$ID exists\` to the status file and stop.
+EOF
+fi
+BRANCH_STEP=${BRANCH_STEP%$'\n'}
+
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
@@ -518,14 +582,7 @@ You are in a disposable git worktree of $REPO, at a detached HEAD on a clean def
 The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
-1. First action: determine whether this task already has a remote branch.
-   Run \`git ls-remote --exit-code --heads origin "refs/heads/fm/$ID"\`.
-   - If it exits 2, this is a first spawn: create your branch with \`git checkout -b fm/$ID\`.
-   - If it succeeds, this is a respawn: run \`git fetch origin "refs/heads/fm/$ID:refs/remotes/origin/fm/$ID"\` and set \`expected=\$(git rev-parse --verify "refs/remotes/origin/fm/$ID^{commit}")\`.
-     If the local branch already exists (\`git rev-parse --verify --quiet "refs/heads/fm/$ID"\` succeeds - normal on relaunch, not a blocker), resume it with \`git checkout fm/$ID\`; otherwise resume it with \`git checkout -b fm/$ID --track "origin/fm/$ID"\`.
-     Run \`actual=\$(git rev-parse --verify HEAD)\` and confirm \`[ "\$actual" = "\$expected" ]\`.
-     If fetching, resolving either commit, the checkout, or that comparison fails, append \`blocked: could not resume fm/$ID at its recorded remote commit\` to the status file and stop. Do not proceed from the default branch.
-   - For any other exit status, append \`blocked: could not determine whether remote branch fm/$ID exists\` to the status file and stop.
+$BRANCH_STEP
 $SETUP2
 
 # Rules

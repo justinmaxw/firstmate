@@ -29,7 +29,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through tasks-axi             |
 | `fm-captain-hold.sh`     | Hold tasks for the captain, record the captain's answers, gate investigation completion, and report record divergence between the status log and the backlog |
 | `fm-decision-hold.sh`    | One-release compatibility shim mapping the retired decision commands onto fm-captain-hold.sh |
-| `fm-brief.sh`            | Scaffold ship (explicit `--mode`), scout, secondmate-charter, Herdr-lab, and spec-backed (`--spec`) briefs |
+| `fm-brief.sh`            | Scaffold ship (explicit `--mode`, optionally remote-less `--no-origin`), scout, secondmate-charter, Herdr-lab, and spec-backed (`--spec`) briefs |
 | `fm-spec.sh`             | Structurally validate a delivery spec, and check a branch's changed files and acceptance-criteria test mappings against it |
 | `fm-metrics.sh`          | Append and correct delivery metrics rows, and read the fleet-wide summary from the main home |
 | `fm-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |

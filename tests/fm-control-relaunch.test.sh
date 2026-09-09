@@ -1300,6 +1300,51 @@ test_spawn_relaunch_refuses_an_unrecorded_task() {
   pass "fm-spawn --relaunch: an unrecorded task is refused"
 }
 
+# A scout on a genuinely remote-less local project, promoted to a local-only
+# ship. fm-promote.sh rewrites only the metadata, so the task keeps its scout
+# brief - which has no delivery contract line and no remote branch step at all.
+add_promoted_scout_task_without_origin() {  # <case-dir> <id>
+  local dir=$1 id=$2
+  local home="$dir/home" proj="$dir/proj" wt="$dir/wt"
+  fm_git_init_commit "$proj"
+  git -C "$proj" worktree add --quiet -b "task-$id" "$wt"
+  [ -z "$(git -C "$proj" remote)" ] || fail "the fixture project must have no origin remote"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$proj" --scout >/dev/null \
+    || fail "scaffolding the scout brief exited non-zero"
+  {
+    echo "window=fmses:fm-$id"
+    echo "endpoint_task_id=$id"
+    echo "worktree=$wt"
+    echo "project=$proj"
+    echo "harness=claude"
+    echo "kind=scout"
+    echo "tasktmp=/tmp/fm-$id"
+    echo "model=default"
+    echo "effort=default"
+  } > "$home/state/$id.meta"
+  printf '%s\n' "fm-$id" > "$dir/fake/windows"
+  printf '%s' "$wt" > "$dir/fake/cwd"
+  TASK_TMPS+=("/tmp/fm-$id")
+  FM_HOME="$home" "$PROMOTE" "$id" --mode local-only --yolo off >/dev/null \
+    || fail "promoting the scout to a local-only ship exited non-zero"
+}
+
+test_promoted_scout_relaunches_on_a_remote_less_project() {
+  local dir out rc
+  dir=$(new_case promotedscout rl40)
+  add_promoted_scout_task_without_origin "$dir" rl40
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl40 --relaunch --harness claude); rc=$?
+  expect_code 0 "$rc" "a promoted scout on a remote-less project should relaunch"$'\n'"$out"
+  assert_not_contains "$out" "origin mismatch" \
+    "a brief with no remote branch step must not be refused for a missing origin"
+  assert_not_contains "$out" "remove $dir/home/data/rl40/brief.md" \
+    "a relaunch must never prescribe deleting the task's brief"
+  [ -f "$dir/home/data/rl40/brief.md" ] || fail "the relaunch removed the scout brief"
+  [ "$(meta_field "$dir" rl40 kind)" = ship ] || fail "the promoted kind must survive the relaunch"
+  pass "fm-spawn --relaunch: a promoted scout on a remote-less project relaunches on its own brief"
+}
+
 test_spawn_relaunch_refuses_a_pane_outside_the_worktree() {
   local dir out rc
   dir=$(new_case wrongcwd rl18)
@@ -1358,3 +1403,4 @@ test_spawn_relaunch_refuses_a_live_agent
 test_spawn_relaunch_refuses_contradicting_flags
 test_spawn_relaunch_refuses_an_unrecorded_task
 test_spawn_relaunch_refuses_a_pane_outside_the_worktree
+test_promoted_scout_relaunches_on_a_remote_less_project
