@@ -271,6 +271,7 @@ test_no_origin_scout_and_local_only_refresh_before_launch() {
     if [ "$contract" = scout ]; then
       out=$(run_spawn "$id" --scout)
     else
+      scaffold_real_brief "$id" --mode local-only --no-origin
       out=$(run_spawn "$id" --mode local-only --yolo off)
     fi
     status=$?
@@ -295,6 +296,7 @@ test_no_origin_dirty_pool_refuses_without_discarding_work() {
   id='pool-no-origin-dirty-r7'
   rec=$(make_case_no_origin dirty-no-origin "$id")
   read_case_record "$rec"
+  scaffold_real_brief "$id" --mode local-only --no-origin
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
   printf 'keep this local work\n' > "$POOL_DIR/uncommitted.txt"
 
@@ -315,6 +317,7 @@ test_no_origin_unresolvable_default_branch_refuses_pool() {
   id='pool-no-origin-unresolvable-r8'
   rec=$(make_case_no_origin unresolvable-no-origin "$id" trunk)
   read_case_record "$rec"
+  scaffold_real_brief "$id" --mode local-only --no-origin
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
   out=$(run_spawn "$id" --mode local-only --yolo off)
@@ -333,6 +336,7 @@ test_no_origin_remote_required_mode_refuses_before_launch() {
     id="pool-no-origin-${mode}-r9"
     rec=$(make_case_no_origin "no-origin-required-$mode" "$id")
     read_case_record "$rec"
+    scaffold_real_brief "$id" --mode "$mode"
     before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
     out=$(run_spawn "$id" --mode "$mode" --yolo off)
@@ -340,6 +344,10 @@ test_no_origin_remote_required_mode_refuses_before_launch() {
     [ "$status" -ne 0 ] || fail "$mode spawn succeeded against a project with no origin remote"
     assert_contains "$out" "has no origin remote" \
       "$mode spawn did not clearly refuse a missing origin before launch"
+    assert_contains "$out" "add the project's origin or spawn local-only work instead" \
+      "$mode spawn offered remediation its own mode cannot use"
+    assert_not_contains "$out" "--no-origin" \
+      "$mode spawn suggested --no-origin, which fm-brief.sh refuses for a remote-required mode"
     assert_not_contains "$out" "spawned $id" "$mode spawn launched a worker despite having no origin to push to"
     [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
       || fail "$mode spawn moved the pooled worktree while refusing a missing origin"
@@ -394,6 +402,27 @@ test_no_origin_brief_and_project_remote_must_agree() {
   pass "a ship brief's recorded origin expectation must agree with the project's actual remote"
 }
 
+test_contract_less_brief_still_pairs_with_the_project_remote() {
+  local rec id out status before
+  id='pool-contract-less-origin-r11'
+  rec=$(make_case_no_origin contract-less-origin "$id")
+  read_case_record "$rec"
+  printf 'You are a crewmate.\n\n# Definition of done\n' > "$HOME_DIR/data/$id/brief.md"
+  before=$(git -C "$POOL_DIR" rev-parse HEAD)
+
+  out=$(run_spawn "$id" --mode local-only --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a contract-less brief launched a worker into a remote probe the project cannot answer"
+  assert_contains "$out" "origin mismatch for $id" \
+    "a contract-less brief on a remote-less project was not refused"
+  assert_contains "$out" "--no-origin" \
+    "a local-only contract-less refusal did not point at the remediation its mode can use"
+  assert_not_contains "$out" "spawned $id" "spawn launched despite the contract-less origin mismatch"
+  [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
+    || fail "spawn moved the pooled worktree while refusing a contract-less origin mismatch"
+  pass "a brief with no delivery contract line is still paired against the project's actual remote"
+}
+
 test_stale_pool_base_refreshes_before_branching
 test_non_main_default_branch_refreshes_before_branching
 test_direct_pr_and_scout_refresh_before_launch
@@ -405,5 +434,6 @@ test_no_origin_dirty_pool_refuses_without_discarding_work
 test_no_origin_unresolvable_default_branch_refuses_pool
 test_no_origin_remote_required_mode_refuses_before_launch
 test_no_origin_brief_and_project_remote_must_agree
+test_contract_less_brief_still_pairs_with_the_project_remote
 
 echo "# all fm-spawn-pool-base-freshen tests passed"
