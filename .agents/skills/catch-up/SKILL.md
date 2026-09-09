@@ -63,7 +63,7 @@ That is a side effect of dispatch, not a recon path firstmate may reach for, whi
 Do not engineer around this with a new script or a scout dispatch.
 Where this skill needs a `projects/` command firstmate cannot otherwise run, it names that command and asks the captain for approval in the moment.
 Hard rule 1 requires a sanctioned owner for any state-changing command under `projects/`, and none of these has one - a fetch writes refs there too - so the captain's in-the-moment approval of that one named command is the owner.
-Those points are enumerated, not counted: Phase 0's fetch (`projects/quota-axi`), Phase 2 step 2's quota-axi dependency install and its rebuild, Rollback's reset and its follow-up rebuild, and Cleanup's anchor-tag drop.
+Those points are enumerated, not counted: Phase 0's fetch (`projects/quota-axi`), Phase 2 step 1's quota-axi dependency install and its rebuild, Rollback's reset and its follow-up rebuild, and Cleanup's anchor-tag drop.
 Each one names its literal command, asks fresh for that specific run, grants no standing authority, and never carries over to another command, another clone, or a future run.
 
 ## Phase 0 - Recon
@@ -114,7 +114,7 @@ That list is the acceptance criteria for the merge.
 Every commit in it names a behavior that must still work afterward.
 Write it into the brief; do not make the worker rediscover it.
 
-`npm outdated -g` also lists `quota-axi` because of the link - that entry is informational only, never act on it directly (see Phase 2 step 3).
+`npm outdated -g` also lists `quota-axi` because of the link - that entry is informational only, never act on it directly (see Phase 2 step 2).
 
 Firstmate's `main..upstream/main` count is an upper bound, not the real backlog: a prior upstream import that was squash-merged carries none of upstream's ancestry even though its content already landed, so every commit it absorbed is counted again - this repo's own `c26e400` ("merge current upstream firstmate into the captain's fork") is exactly that, a single-parent commit.
 Skim `git log --oneline main..upstream/main` - the same direction as the behind-count itself - and report what is genuinely new rather than trusting the raw number, and expect the first merge after a flattened import to be a full re-import rather than a routine one.
