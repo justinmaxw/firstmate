@@ -13,7 +13,9 @@
 #   including a brief whose recorded origin expectation disagrees with the
 #   project's actual remote, so the worker's
 #   instructions and the recorded task delivery cannot drift apart; a brief
-#   scaffolded before that line existed warns once and launches on the flag. When
+#   scaffolded before that line existed warns once and launches on the flag,
+#   unless the project has no origin at all - such a brief still carries the
+#   remote branch step, so the pairing check refuses it. When
 #   the explicit mode carries less rigor than the project's standing posture, a
 #   loud one-line deviation notice is printed and the spawn continues.
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
@@ -1922,14 +1924,14 @@ if [ "$KIND" = ship ]; then
     # the flag for every remote-required mode), so each direction gets the
     # remediation its mode can actually act on.
     if [ "$MODE" = local-only ]; then
-      echo "error: origin mismatch for $ID: $PROJ_NAME has no origin remote, but the brief's branch step probes one and would block the worker immediately; re-scaffold the brief with fm-brief.sh --no-origin" >&2
+      echo "error: origin mismatch for $ID: $PROJ_NAME has no origin remote, but the brief's branch step probes one and would block the worker immediately; remove $BRIEF and re-scaffold it with fm-brief.sh --no-origin (the scaffold refuses to overwrite an existing brief), or start a fresh task" >&2
     else
       echo "error: origin mismatch for $ID: $PROJ_NAME has no origin remote, but this spawn's delivery mode pushes a branch and opens a pull request; add the project's origin or spawn local-only work instead" >&2
     fi
     exit 1
   fi
   if [ "$PROJ_HAS_ORIGIN" = 1 ] && [ "$BRIEF_EXPECTS_ORIGIN" -eq 0 ]; then
-    echo "error: origin mismatch for $ID: the brief was scaffolded with --no-origin, but $PROJ_NAME does have an origin remote; re-scaffold the brief without --no-origin so its branch step matches the project" >&2
+    echo "error: origin mismatch for $ID: the brief was scaffolded with --no-origin, but $PROJ_NAME does have an origin remote; remove $BRIEF and re-scaffold it without --no-origin (the scaffold refuses to overwrite an existing brief), or start a fresh task, so its branch step matches the project" >&2
     exit 1
   fi
   # The registry holds the captain's standing posture, so dropping below it is

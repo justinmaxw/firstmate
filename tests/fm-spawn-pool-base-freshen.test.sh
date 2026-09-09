@@ -417,6 +417,8 @@ test_contract_less_brief_still_pairs_with_the_project_remote() {
     "a contract-less brief on a remote-less project was not refused"
   assert_contains "$out" "--no-origin" \
     "a local-only contract-less refusal did not point at the remediation its mode can use"
+  assert_contains "$out" "remove $HOME_DIR/data/$id/brief.md" \
+    "the refusal prescribed a re-scaffold without naming the existing brief the scaffold refuses to overwrite"
   assert_not_contains "$out" "spawned $id" "spawn launched despite the contract-less origin mismatch"
   [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
     || fail "spawn moved the pooled worktree while refusing a contract-less origin mismatch"
