@@ -69,6 +69,7 @@ After remote creation succeeds, clone it locally, add the registry entry, and in
 
 For a purely `local-only` project, create a local Git repository under its unused `projects/<name>` path, add the registry entry, and make no GitHub call.
 The captain's request to create that local project authorizes this local initialization, but it does not authorize an unmentioned remote repository.
+When later scaffolding a ship brief for a project with no origin remote, pass `bin/fm-brief.sh`'s `--no-origin` flag (requires `--mode local-only`); its own header and help own the exact mechanics.
 
 ## Initialize
 
