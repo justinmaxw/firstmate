@@ -56,8 +56,10 @@
 # no-mistakes-prod-only is a registry policy, not a task mode; resolve it to one of
 # the three concrete modes at intake before calling this script.
 # The generated ship brief records the chosen mode as a fixed machine-readable
-# "Delivery contract: mode=<mode>" line. bin/fm-spawn.sh reads that line and refuses
-# to launch a ship task whose explicit --mode disagrees, so an adjusted brief and the
+# "Delivery contract: mode=<mode>" line, suffixed " origin=none" when --no-origin
+# scaffolded the local-branch-only step. bin/fm-spawn.sh reads that line and refuses
+# to launch a ship task whose explicit --mode disagrees, or whose recorded origin
+# expectation disagrees with the project's actual remote, so an adjusted brief and the
 # recorded task metadata cannot drift apart.
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
 # The branch step resumes an existing remote task branch at its fetched commit,
@@ -472,6 +474,11 @@ fi
 # delivery mode, validated above. The generated DOD opens with the fixed
 # "Delivery contract: mode=<mode>" line that bin/fm-spawn.sh checks against its own
 # explicit --mode before launching.
+ORIGIN_CONTRACT=""
+if [ "$NO_ORIGIN" -eq 1 ]; then
+  ORIGIN_CONTRACT=" origin=none"
+fi
+
 case "$MODE" in
   direct-PR)
     SETUP2=""
@@ -490,7 +497,7 @@ EOF
     RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the merge into local \`main\`."
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
-Delivery contract: mode=local-only
+Delivery contract: mode=local-only$ORIGIN_CONTRACT
 This task ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.

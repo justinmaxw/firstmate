@@ -9,7 +9,9 @@
 #   per task at intake (AGENTS.md section 7); data/projects.md holds the captain's
 #   standing posture as context, not as this task's answer, so a spawn never looks
 #   the mode up. A ship spawn additionally reads the brief's recorded
-#   "Delivery contract: mode=<mode>" line and REFUSES a mismatch, so the worker's
+#   "Delivery contract: mode=<mode>[ origin=none]" line and REFUSES a mismatch,
+#   including a brief whose recorded origin expectation disagrees with the
+#   project's actual remote, so the worker's
 #   instructions and the recorded task delivery cannot drift apart; a brief
 #   scaffolded before that line existed warns once and launches on the flag. When
 #   the explicit mode carries less rigor than the project's standing posture, a
@@ -143,7 +145,10 @@
 #   origin, resolves the current remote default branch, and resets to its tip;
 #   a project with no origin remote at all (a committed local-only project)
 #   resets to its own local default branch instead, since the pooled worktree
-#   already shares that project's object store and refs. An unreachable
+#   already shares that project's object store and refs. That local fallback is
+#   allowed only for a scout or a local-only ship: a no-mistakes or direct-PR
+#   ship pushes a branch and opens a PR, so a missing origin refuses the spawn
+#   before any agent launches. An unreachable
 #   origin, unresolved default branch, or non-clean worktree refuses the
 #   spawn rather than risking a PR (or, for a local-only project, a ready
 #   branch) based on stale history.
@@ -1879,16 +1884,43 @@ delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task
 
 # Brief/spawn delivery agreement, checked before any endpoint exists.
 # fm-brief.sh records a ship brief's mode as a fixed "Delivery contract: mode=<mode>"
-# line. A spawn that disagrees would launch a worker whose instructions and whose
+# line, suffixed " origin=none" when --no-origin scaffolded the local-branch-only
+# branch step. A spawn that disagrees would launch a worker whose instructions and whose
 # recorded task delivery differ, which is the exact drift this contract prevents.
+# The same line therefore also pairs the brief's branch step with the project's real
+# remote: a remote-expecting brief against a remote-less project would launch a worker
+# straight into `git ls-remote origin` failing, and a no-origin brief against a project
+# that does have an origin records a branch step its own project contradicts.
 if [ "$KIND" = ship ]; then
   PROJ_NAME=$(basename "$PROJ_ABS")
-  BRIEF_MODE=$(sed -n 's/^Delivery contract: mode=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
+  CONTRACT_LINE=$(sed -n 's/^Delivery contract: //p' "$BRIEF" | head -n 1)
+  BRIEF_MODE=$(printf '%s\n' "$CONTRACT_LINE" | sed -n 's/^mode=\([^ ]*\).*$/\1/p')
   if [ -z "$BRIEF_MODE" ]; then
     echo "warning: $BRIEF records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode $MODE - confirm its definition of done matches" >&2
   elif [ "$BRIEF_MODE" != "$MODE" ]; then
     echo "error: delivery mismatch for $ID: the brief says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
     exit 1
+  else
+    BRIEF_EXPECTS_ORIGIN=1
+    case " $CONTRACT_LINE " in
+      *" origin=none "*) BRIEF_EXPECTS_ORIGIN=0 ;;
+    esac
+    PROJ_HAS_ORIGIN=
+    if git -C "$PROJ_ABS" rev-parse --git-dir >/dev/null 2>&1; then
+      if git -C "$PROJ_ABS" remote get-url origin >/dev/null 2>&1; then
+        PROJ_HAS_ORIGIN=1
+      else
+        PROJ_HAS_ORIGIN=0
+      fi
+    fi
+    if [ -n "$PROJ_HAS_ORIGIN" ] && [ "$BRIEF_EXPECTS_ORIGIN" -eq 1 ] && [ "$PROJ_HAS_ORIGIN" -eq 0 ]; then
+      echo "error: origin mismatch for $ID: $PROJ_NAME has no origin remote, but the brief's branch step probes one and would block the worker immediately; re-scaffold the brief with fm-brief.sh --no-origin (requires --mode local-only)" >&2
+      exit 1
+    fi
+    if [ -n "$PROJ_HAS_ORIGIN" ] && [ "$BRIEF_EXPECTS_ORIGIN" -eq 0 ] && [ "$PROJ_HAS_ORIGIN" -eq 1 ]; then
+      echo "error: origin mismatch for $ID: the brief was scaffolded with --no-origin, but $PROJ_NAME does have an origin remote; re-scaffold the brief without --no-origin so its branch step matches the project" >&2
+      exit 1
+    fi
   fi
   # The registry holds the captain's standing posture, so dropping below it is
   # allowed (a current explicit captain instruction wins) but never silent. An

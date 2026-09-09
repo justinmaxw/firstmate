@@ -348,6 +348,52 @@ test_no_origin_remote_required_mode_refuses_before_launch() {
   pass "a remote-required delivery mode refuses a project with no origin remote before any agent launches"
 }
 
+scaffold_real_brief() {
+  local id=$1
+  shift
+  rm -rf "$HOME_DIR/data/$id"
+  FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    "$ROOT/bin/fm-brief.sh" "$id" "$PROJECT_DIR" "$@" >/dev/null \
+    || fail "scaffolding a real brief for $id exited non-zero"
+}
+
+test_no_origin_brief_and_project_remote_must_agree() {
+  local rec id out status before
+  id='pool-brief-origin-drift-r10'
+  rec=$(make_case_no_origin brief-origin-drift "$id")
+  read_case_record "$rec"
+  scaffold_real_brief "$id" --mode local-only
+  before=$(git -C "$POOL_DIR" rev-parse HEAD)
+
+  out=$(run_spawn "$id" --mode local-only --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn launched a worker whose brief probes an origin the project does not have"
+  assert_contains "$out" "origin mismatch for $id" \
+    "spawn did not clearly refuse a remote-expecting brief on a remote-less project"
+  assert_not_contains "$out" "spawned $id" "spawn launched despite the brief/project origin mismatch"
+  [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
+    || fail "spawn moved the pooled worktree while refusing the origin mismatch"
+
+  scaffold_real_brief "$id" --mode local-only --no-origin
+  out=$(run_spawn "$id" --mode local-only --yolo off)
+  status=$?
+  expect_code 0 "$status" "a --no-origin brief on a remote-less project should launch"
+  assert_contains "$out" "spawned $id" "the paired --no-origin brief did not launch"
+
+  id='pool-brief-origin-drift-remote-r10'
+  rec=$(make_case brief-origin-drift-remote "$id")
+  read_case_record "$rec"
+  scaffold_real_brief "$id" --mode local-only --no-origin
+  out=$(run_spawn "$id" --mode local-only --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn launched a --no-origin brief against a project that does have an origin"
+  assert_contains "$out" "origin mismatch for $id" \
+    "spawn did not clearly refuse a --no-origin brief on a remote-backed project"
+  pass "a ship brief's recorded origin expectation must agree with the project's actual remote"
+}
+
 test_stale_pool_base_refreshes_before_branching
 test_non_main_default_branch_refreshes_before_branching
 test_direct_pr_and_scout_refresh_before_launch
@@ -358,5 +404,6 @@ test_no_origin_scout_and_local_only_refresh_before_launch
 test_no_origin_dirty_pool_refuses_without_discarding_work
 test_no_origin_unresolvable_default_branch_refuses_pool
 test_no_origin_remote_required_mode_refuses_before_launch
+test_no_origin_brief_and_project_remote_must_agree
 
 echo "# all fm-spawn-pool-base-freshen tests passed"
