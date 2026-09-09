@@ -1,0 +1,40 @@
+# /catch-up skill - semantic verification (target commit 734eff7)
+
+$ python3 verify-catch-up-skill.py .agents/skills/catch-up/SKILL.md
+== skill discovery record (what the captain's agent lists for /catch-up) ==
+name: catch-up
+user-invocable: True
+description: Pull kunchenguid's upstream changes into every forked or locally patched tool this fleet depends on - firstmate, quota-axi, the npm axi tools, and no-mistakes - while preserving our own local changes. Use when the captain invokes /catch-up, asks to update the open source tools, asks to pull in kunchenguid's changes, or asks how far behind upstream we are.
+targets advertised: ['firstmate', 'quota-axi', 'npm axi tools', 'no-mistakes']
+
+== target map rows ==
+ - firstmate
+ - quota-axi
+ - gh-axi, lavish-axi, chrome-devtools-axi, tasks-axi
+ - no-mistakes
+
+== Phase 2 landing order (as parsed) ==
+  step 1: quota-axi
+  step 2: npm axi tools
+
+== cross-reference resolution ==
+  "Phase 2 step 1's quota-axi dependency install and its rebuild, Rollback's reset and its follow-up rebuild, and Cleanup's anchor-tag drop" -> step 1: quota-axi
+  "Phase 2 step 2)" -> step 2: npm axi tools
+
+  step 1 carries the dependency install + rebuild approval points: OK
+  step 2 carries the 'Never npm update -g quota-axi' guard: OK
+
+  no fetch/merge/tag/rebuild of baby-menu remains in any phase: OK
+
+ALL CHECKS PASSED
+
+# Same verifier against the pre-review-fix skill (c33c676) - reproduces the stale cross-reference
+$ python3 verify-catch-up-skill.py <c33c676 SKILL.md>
+== cross-reference resolution ==
+  "Phase 2 step 2's quota-axi dependency install and its rebuild, Rollback's reset and its follow-up rebuild, and Cleanup's anchor-tag drop" -> step 2: npm axi tools
+  "Phase 2 step 3)" -> UNRESOLVED
+Traceback (most recent call last):
+  File "/tmp/cu/verify_catchup.py", line 64, in <module>
+    assert step, f"Phase 2 step {n} does not exist"
+           ^^^^
+AssertionError: Phase 2 step 3 does not exist
