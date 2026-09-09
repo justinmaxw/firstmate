@@ -1304,7 +1304,8 @@ test_spawn_relaunch_refuses_an_unrecorded_task() {
 # ship. fm-promote.sh rewrites only the metadata, so the task keeps its scout
 # brief - which has no delivery contract line and no remote branch step at all.
 add_promoted_scout_task_without_origin() {  # <case-dir> <id>
-  local dir=$1 id=$2 home="$dir/home" proj="$dir/proj" wt="$dir/wt"
+  local dir=$1 id=$2
+  local home="$dir/home" proj="$dir/proj" wt="$dir/wt"
   fm_git_init_commit "$proj"
   git -C "$proj" worktree add --quiet -b "task-$id" "$wt"
   [ -z "$(git -C "$proj" remote)" ] || fail "the fixture project must have no origin remote"
