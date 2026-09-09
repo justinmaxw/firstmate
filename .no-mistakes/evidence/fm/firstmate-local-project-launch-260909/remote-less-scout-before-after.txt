@@ -1,0 +1,42 @@
+=== BEFORE THE FIX (base 6055c2d) - scout spawn on a committed remote-less local project ===
+$ git -C <project> remote -v      # (empty: no origin at all)
+$ git -C <project> log --oneline
+7572bdc add transcriber sketch
+b94e0df initial commit
+
+$ bin/fm-brief.sh homework-transcriber-spec-260909 <project> --scout
+scaffolded: <fm-home>/data/homework-transcriber-spec-260909/brief.md (scout; replace {TASK})
+
+$ bin/fm-spawn.sh homework-transcriber-spec-260909 <project> --scout --harness claude --model sonnet --effort xhigh
+fatal: 'origin' does not appear to be a git repository
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+error: could not fetch origin for pooled worktree '<pooled-worktree>'; refusing to launch from a potentially stale base
+[exit status: 1]
+
+# pooled worktree base after the attempt:
+$ git -C <pooled-worktree> log --oneline -1
+b94e0df initial commit
+$ git -C <pooled-worktree> status -sb | head -1
+## HEAD (no branch)
+
+=== AFTER THE FIX (target 4113ff3) - same command, same fixture shape ===
+$ git -C <project> remote -v      # (empty: no origin at all)
+$ git -C <project> log --oneline
+287c451 add transcriber sketch
+90d3013 initial commit
+
+$ bin/fm-brief.sh homework-transcriber-spec-260909 <project> --scout
+scaffolded: <fm-home>/data/homework-transcriber-spec-260909/brief.md (scout; replace {TASK})
+
+$ bin/fm-spawn.sh homework-transcriber-spec-260909 <project> --scout --harness claude --model sonnet --effort xhigh
+spawned homework-transcriber-spec-260909 harness=claude kind=scout window=firstmate:fm-homework-transcriber-spec-260909 worktree=<pooled-worktree>
+[exit status: 0]
+
+# pooled worktree base after the attempt:
+$ git -C <pooled-worktree> log --oneline -1
+287c451 add transcriber sketch
+$ git -C <pooled-worktree> status -sb | head -1
+## HEAD (no branch)

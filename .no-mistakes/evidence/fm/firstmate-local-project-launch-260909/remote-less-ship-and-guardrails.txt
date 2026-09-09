@@ -1,0 +1,57 @@
+=== AFTER THE FIX - local-only ship on the same remote-less local project ===
+$ git -C <project> remote -v      # (empty: no origin at all)
+$ git -C <project> log --oneline
+e472669 add transcriber sketch
+923e33d initial commit
+
+$ bin/fm-brief.sh homework-transcriber-260909 <project> --mode local-only --no-origin
+scaffolded: <fm-home>/data/homework-transcriber-260909/brief.md (ship, mode=local-only; replace {TASK})
+
+$ bin/fm-spawn.sh homework-transcriber-260909 <project> --mode local-only --yolo off --harness claude --model sonnet --effort xhigh
+notice: homework-transcriber-260909 ships mode=local-only while the standing posture for project is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned homework-transcriber-260909 harness=claude kind=ship mode=local-only yolo=off window=firstmate:fm-homework-transcriber-260909 worktree=<pooled-worktree>
+[exit status: 0]
+
+# pooled worktree base after the attempt:
+$ git -C <pooled-worktree> log --oneline -1
+e472669 add transcriber sketch
+$ git -C <pooled-worktree> status -sb | head -1
+## HEAD (no branch)
+
+=== AFTER THE FIX - a remote-required delivery mode is still refused (it would have to push) ===
+$ git -C <project> remote -v      # (empty: no origin at all)
+$ git -C <project> log --oneline
+a7d1771 add transcriber sketch
+c174203 initial commit
+
+$ bin/fm-brief.sh homework-transcriber-nm-260909 <project> --mode no-mistakes
+scaffolded: <fm-home>/data/homework-transcriber-nm-260909/brief.md (ship, mode=no-mistakes; replace {TASK})
+
+$ bin/fm-spawn.sh homework-transcriber-nm-260909 <project> --mode no-mistakes --yolo off --harness claude
+error: origin mismatch for homework-transcriber-nm-260909: project has no origin remote, but this spawn's delivery mode pushes a branch and opens a pull request; add the project's origin or spawn local-only work instead
+[exit status: 1]
+
+# pooled worktree base after the attempt:
+$ git -C <pooled-worktree> log --oneline -1
+c174203 initial commit
+$ git -C <pooled-worktree> status -sb | head -1
+## HEAD (no branch)
+
+=== AFTER THE FIX - fm-brief.sh refuses --no-origin unless it is paired with --mode local-only ===
+$ git -C <project> remote -v      # (empty: no origin at all)
+$ git -C <project> log --oneline
+3adc3cb add transcriber sketch
+25396e3 initial commit
+
+$ bin/fm-brief.sh homework-transcriber-bad-260909 <project> --mode no-mistakes --no-origin
+error: --no-origin requires --mode local-only; no-mistakes ships through a remote this project does not have
+
+$ bin/fm-spawn.sh homework-transcriber-bad-260909 <project> --mode no-mistakes --yolo off --harness claude
+error: no brief at <fm-home>/data/homework-transcriber-bad-260909/brief.md
+[exit status: 1]
+
+# pooled worktree base after the attempt:
+$ git -C <pooled-worktree> log --oneline -1
+25396e3 initial commit
+$ git -C <pooled-worktree> status -sb | head -1
+## HEAD (no branch)

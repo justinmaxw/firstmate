@@ -1,0 +1,27 @@
+# Generated brief (public output of bin/fm-brief.sh) for a --mode local-only --no-origin ship:
+# branch-setup step - no 'git ls-remote origin' probe, local branch only.
+
+12:You are in a disposable git worktree of <scratch>/c-tgt-ship/project, at a detached HEAD on a clean default branch.
+14:**Verify isolation before anything else.** Run `pwd -P` and `git rev-parse --show-toplevel`; both must resolve to the disposable task worktree you were launched in, such as a treehouse pool path or an Orca-managed worktree, not the primary checkout firstmate operates from.
+15:The path check is authoritative: `git rev-parse --git-dir` and `git rev-parse --git-common-dir` can help inspect the repo, but they do not prove you are outside the primary checkout.
+16:If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append `blocked: launched in primary checkout, not an isolated worktree` to the status file and stop.
+18:1. First action: determine whether this task already has a branch.
+20:   - If it prints nothing (exit 1), this is a first spawn: create your branch with `git checkout -b fm/homework-transcriber-260909`.
+21:   - If it prints a commit, this is a respawn: resume it with `git checkout fm/homework-transcriber-260909`.
+22:     This project has no remote, so the local branch is the only record of prior work; do not fetch or track an origin branch.
+23:     If that checkout fails (for example the branch is still checked out in another worktree of this project), append `blocked: could not resume local branch fm/homework-transcriber-260909` to the status file and stop. Do not proceed from the default branch.
+24:   - If the command itself errors for any other reason, append `blocked: could not determine whether local branch fm/homework-transcriber-260909 exists` to the status file and stop.
+28:1. Never push to any remote and never open a PR. Work only on your `fm/homework-transcriber-260909` branch; firstmate handles the merge into local `main`.
+32:   `echo "{state}: {one short line}" >> '<scratch>/c-tgt-ship/home/state/homework-transcriber-260909.status'`
+54:Firstmate steers you through durable message files in '<scratch>/c-tgt-ship/home/state/homework-transcriber-260909.inbox'.
+55:When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - list '<scratch>/c-tgt-ship/home/state/homework-transcriber-260909.inbox'/*.msg, read and act on each message in numeric order, then acknowledge each handled message by moving it: `mv '<scratch>/c-tgt-ship/home/state/homework-transcriber-260909.inbox'/NNN.msg '<scratch>/c-tgt-ship/home/state/homework-transcriber-260909.inbox'/handled/`.
+59:If `AGENTS.md` or `CLAUDE.md` already exists, or if this task produced durable project-intrinsic knowledge, run `<scratch>/target/bin/fm-ensure-agents-md.sh .` in the worktree.
+62:If you touch a project `AGENTS.md` that lacks `## Maintaining this file`, add that short self-governance section from `<scratch>/target/bin/fm-ensure-agents-md.sh` in the same pass.
+66:Delivery contract: mode=local-only origin=none
+68:The task is complete only when committed on your branch `fm/homework-transcriber-260909`. Do NOT push, do NOT open a PR, do NOT merge.
+69:Keep your branch a clean fast-forward onto the current default branch - if `main` has advanced, rebase onto it so the eventual merge stays a fast-forward.
+70:When it is implemented and committed, append `done: ready in branch fm/homework-transcriber-260909` to the status file and stop.
+71:The configured merge authority approves the ready branch, then firstmate merges it into local `main` through the guarded fast-forward path.
+
+# For contrast, the same scaffold WITHOUT --no-origin (a remote-backed project) keeps the remote probe:
+19:   Run `git ls-remote --exit-code --heads origin "refs/heads/fm/homework-transcriber-nm-260909"`.
