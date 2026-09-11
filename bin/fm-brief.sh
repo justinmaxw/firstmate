@@ -506,8 +506,6 @@ The report is the only thing that survives, so anything worth keeping must be in
 
 $INBOX_SECTION
 
-$INBOX_SECTION
-
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
@@ -633,8 +631,6 @@ $ASK_USER_BLOCK
    going. A drive-call error, timeout, slow read, or generic unreachability is NOT a daemon error:
    the daemon accepts \`respond\` immediately and runs the round in the background, so a killed or
    timed-out call was only waiting for a read while the run kept working.
-
-$INBOX_SECTION
 
 $INBOX_SECTION
 

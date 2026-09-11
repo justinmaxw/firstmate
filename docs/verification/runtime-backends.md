@@ -1742,7 +1742,7 @@ The extension executes inside the signed CLI's own runtime, so a CLI upgrade can
 ## Antigravity CLI (agy)
 
 The captain's Google AI Pro/Ultra subscription pool (Task 1 of the captain-approved Gemini Pro pool spec, `data/firstmate-gemini-pro-pool-spec-260825/report.md` in the primary home).
-[`.agents/skills/harness-adapters/SKILL.md`](../../.agents/skills/harness-adapters/SKILL.md#agy-verified-crewmatescout-2026-08-26-antigravity-cli-1120) owns the complete per-fact verified table; this section owns the dated evidence and the AC-10 per-backend status this spec requires.
+[`.agents/skills/harness-adapters/references/harness/agy.md`](../../.agents/skills/harness-adapters/references/harness/agy.md#operating-facts) owns the complete per-fact verified table; this section owns the dated evidence and the AC-10 per-backend status this spec requires.
 
 ### Runtime backend status (AC-10)
 

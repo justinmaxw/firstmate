@@ -133,7 +133,14 @@ make_agy_case() {  # <tmproot> <name> [absent]
   id="agy-$name-x1"
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" \
     "$agyhome/$(dirname "$AGY_CREDENTIAL_RELPATH")"
-  printf 'brief\n' > "$home/data/$id/brief.md"
+  cat > "$home/data/$id/brief.md" <<EOF
+# Task
+## Captain's intent
+brief for $id
+
+## Firstmate spec
+Exercise the agy launch path under test.
+EOF
   fm_git_worktree "$proj" "$wt" "fm/$id"
   touch "$home/state/.last-watcher-beat"
   [ "$credential" = absent ] || agy_seed_credential "$agyhome"

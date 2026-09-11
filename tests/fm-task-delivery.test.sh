@@ -34,6 +34,17 @@ make_home() {  # <name> [<registry-line>...]
   fakebin="$TMP_ROOT/$name/bin"
   mkdir -p "$home/data" "$home/state" "$home/config" "$projects/proj" "$fakebin"
   git -C "$projects/proj" init -q || fail "could not initialize project fixture"
+  # Remote-required delivery modes are refused outright against a project with no
+  # origin, so the fixture carries a real seeded one and the rows below exercise
+  # the delivery contract itself rather than the origin-pairing gate.
+  git init -q --bare "$TMP_ROOT/$name/origin.git" || fail "could not initialize origin fixture"
+  git -C "$projects/proj" remote add origin "$TMP_ROOT/$name/origin.git"
+  printf 'base\n' > "$projects/proj/README.md"
+  git -C "$projects/proj" add README.md
+  git -C "$projects/proj" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
+    commit -qm initial || fail "could not seed project fixture"
+  git -C "$projects/proj" push -q origin HEAD:refs/heads/main || fail "could not seed origin fixture"
+  git --git-dir="$TMP_ROOT/$name/origin.git" symbolic-ref HEAD refs/heads/main
   printf '#!/bin/sh\nexit 1\n' > "$fakebin/tmux"
   chmod +x "$fakebin/tmux"
   if [ "$#" -gt 0 ]; then

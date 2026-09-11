@@ -61,7 +61,7 @@ make_case_no_origin() {
 
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
   printf 'codex\n' > "$home/config/crew-harness"
-  printf 'brief for %s\n' "$id" > "$home/data/$id/brief.md"
+  fm_test_spawn_brief "$home" "$id"
   touch "$home/state/.last-watcher-beat"
 
   git init --quiet -b "$default" "$project"
@@ -279,7 +279,7 @@ test_originless_pool_launches_without_a_freshness_fetch() {
     || fail "fixture unexpectedly configured an origin remote"
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode local-only --yolo off)
   status=$?
   expect_code 0 "$status" "spawn should launch a local-only pooled worktree with no origin"$'\n'"$out"
   assert_contains "$out" "spawned $id" "spawn did not report success for the origin-less pool"
@@ -364,7 +364,7 @@ test_empty_only_included_origin_config_section_launches_pool() {
   git -C "$POOL_DIR" config include.path "$(basename "$included")"
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode local-only --yolo off)
   status=$?
   expect_code 0 "$status" "spawn should proceed when an included empty origin section is not enumerable"$'\n'"$out"
   assert_contains "$out" "spawned $id" "spawn did not report success for the undetectable included section"
@@ -386,7 +386,7 @@ test_inactive_conditional_origin_include_launches_pool() {
   git -C "$POOL_DIR" config 'includeIf.gitdir:/never/matches/this/worktree/.path' "$included"
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode local-only --yolo off)
   status=$?
   expect_code 0 "$status" "spawn should ignore an inactive conditional origin include"$'\n'"$out"
   assert_contains "$out" "spawned $id" "spawn did not report success with an inactive origin include"
@@ -591,6 +591,12 @@ scaffold_real_brief() {
     FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
     "$ROOT/bin/fm-brief.sh" "$id" "$PROJECT_DIR" "$@" >/dev/null \
     || fail "scaffolding a real brief for $id exited non-zero"
+  local brief content
+  brief="$HOME_DIR/data/$id/brief.md"
+  content=$(cat "$brief")
+  content=${content//'{TASK}'/brief for $id}
+  content=${content//'{FIRSTMATE_SPEC}'/Exercise the spawn behavior under test.}
+  printf '%s\n' "$content" > "$brief"
 }
 
 test_no_origin_brief_and_project_remote_must_agree() {
