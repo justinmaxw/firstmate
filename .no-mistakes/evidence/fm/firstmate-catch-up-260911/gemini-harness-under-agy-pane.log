@@ -1,0 +1,11 @@
+== fm-gemini-harness (ANTIGRAVITY_AGENT=1)
+ok - fm-harness.sh: gemini's marker outranks an inherited CLAUDECODE
+ok - fm-harness.sh: an inherited AI_AGENT never claims the gemini identity
+ok - fm-harness.sh: ancestry detects a natively-named gemini command
+ok - fm-harness.sh: ancestry rejects unrelated gemini mentions
+ok - fm-harness.sh: this platform's node reports comm=node and ancestry reaches gemini
+ok - fm-gemini-lib.sh: identity comes from the script argument, never a bare interpreter
+ok - fm-control-lib.sh: gemini carries its verified interrupt and exit mechanics
+ok - fm-control-lib.sh: gemini is a crewmate/scout adapter only
+ok - fm-control-lib.sh: gemini's wiring stays outside the project worktree
+exit=0
