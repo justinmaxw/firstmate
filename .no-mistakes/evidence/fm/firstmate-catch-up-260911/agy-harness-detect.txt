@@ -1,0 +1,4 @@
+$ ANTIGRAVITY_AGENT=1 bin/fm-harness.sh
+agy
+$ bin/fm-harness.sh   (inside Claude Code)
+claude

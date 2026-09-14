@@ -1,0 +1,14 @@
+ok - check accepts a complete spec and refuses a missing one
+ok - check enforces the sections the declared tier requires, and only those
+ok - an unfilled 'Tier: FULL | LIGHT' template line is not a tier
+ok - check blocks on an unanswered open question and accepts an answered one, nested detail included
+ok - check catches a task decomposition pointing at a criterion that does not exist
+ok - check refuses a numbering gap and an unreasoned manual-check
+ok - scope and ac agree on the same tree: a spec that satisfies one cannot trap the worker on the other
+ok - scope passes a clean diff and fails on both a stray path and a section 9 path
+ok - scope refuses an unresolvable base instead of reporting the tree in scope
+ok - section 9 still overrides the paths scope treats as implicitly declared
+ok - a backtick-quoted path containing a space stays one pattern in both sections
+ok - a rename cannot smuggle a section 9 path out of the tree
+ok - ac fails an unmapped criterion, a missing test file, and a missing test name, and passes a real mapping
+ok - criteria prints spec-order criteria verbatim and refuses an id the spec does not declare

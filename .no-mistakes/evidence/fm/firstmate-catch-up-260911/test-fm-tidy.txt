@@ -1,0 +1,5 @@
+ok - fm-tidy: dry run and safe record boundaries
+ok - fm-tidy: archives only eligible report directories
+ok - fm-tidy: quiet no-op run is silent
+ok - fm-tidy: treehouse cleanup excludes leased and live-task slots
+ok - fm-tidy: bootstrap integration is lock-gated

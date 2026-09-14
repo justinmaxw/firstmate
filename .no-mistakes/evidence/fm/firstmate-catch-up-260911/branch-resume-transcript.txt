@@ -1,0 +1,9 @@
+## relaunch: brief steps for fm/resume-t1 (remote + local branch exist)
+a4dae8a844dd93d6b82b5d510009871998a1979e	refs/heads/fm/resume-t1
+ls-remote exit=0
+local branch exists -> git checkout fm/resume-t1
+RESUMED at a4dae8a prior crewmate work (actual==expected)
+## remote-less respawn: brief steps for fm/local-t1
+remotes: 0
+prints commit 252e4bf1c15755071a76a17a9b819bc87e846335 -> respawn
+RESUMED at 252e4bf prior local work

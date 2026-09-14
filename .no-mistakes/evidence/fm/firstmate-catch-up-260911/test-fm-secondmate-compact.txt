@@ -1,0 +1,13 @@
+ok - usage errors are refused with exit 2
+ok - every unsafe target is refused before anything reaches the agent
+ok - an unreported stow stops the sequence with no compaction command sent
+ok - a failed stow delivery stops the sequence
+ok - a session that is not writing transcripts never receives a compaction command
+ok - a stow turn that reports partway through is waited out, not refused
+ok - an agent still working after its stow report never receives the compaction command
+ok - a compaction that leaves no record is reported as unconfirmed, not as success
+ok - a compaction record older than the send never counts as confirmation
+ok - a compaction record that already existed before the send never confirms the new one
+ok - the confirmed sequence is stow, compact, re-orient, in that order
+ok - a failed re-orientation after a real compaction gets its own exit code, not the pre-send refusal code
+ok - every post-stow exit 1 names what already reached the agent

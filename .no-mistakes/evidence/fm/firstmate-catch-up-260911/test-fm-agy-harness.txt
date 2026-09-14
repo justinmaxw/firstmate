@@ -1,0 +1,14 @@
+ok - agy is detected through its own process ancestor
+ok - agy is detected through its ANTIGRAVITY_AGENT=1 environment marker
+ok - agy detection does not claim unrelated agy-containing commands
+ok - agy launch clears foreign harness markers before ancestry detection
+ok - agy spawn launches with autonomy, the interactive-prompt flag, and a defaulted model/effort
+ok - agy maps low/medium/high directly and falls unsupported classes back to medium rather than omitting the flag
+ok - a raw agy launch is refused even when the embedded model is the allowlisted literal
+ok - a raw agy launch cannot use an embedded --model to bypass the AC-2 allowlist
+ok - a raw agy launch is refused before AC-1's credential preflight could even run
+ok - a raw agy launch is refused before the subscription-only billing refusal could even run
+ok - AC-9's secondmate refusal still applies to a raw agy launch command
+ok - agy is refused as a secondmate harness
+ok - agy's control-plane lifecycle tables (interrupt, exit, kind support) are correctly registered
+ok - the agy delivery-confirmation regex matches its verified busy footer and not its idle footer
