@@ -703,10 +703,49 @@ test_agy_unsupported_effort_relaunch_refuses_before_stop() {
   add_agy_task "$dir" "$id" gemini-3.7-flash-medium medium
   out=$(run_control "$dir" "$id" relaunch --effort xhigh --note "unsupported"); rc=$?
   expect_code 1 "$rc" "an agy relaunch with an unsupported effort should refuse"
-  assert_contains "$out" "agy encodes effort in its model id" "the agy effort refusal lacked its reason"
+  assert_contains "$out" "encodes effort in the model id" "the agy effort refusal lacked its reason"
   [ "$(cat "$dir/fake/command")" = agy ] || fail "a refused agy relaunch stopped the running agent"
   [ ! -s "$dir/fake/literal" ] || fail "a refused agy relaunch sent lifecycle input"
   pass "fm-control relaunch: an agy relaunch with an unsupported effort refuses before stopping the agent"
+}
+
+# assert_agy_relaunch_refused_before_stop <case-dir> <id> <expected> <args...>
+assert_agy_relaunch_refused_before_stop() {
+  local dir=$1 id=$2 expected=$3 out rc meta_before
+  shift 3
+  meta_before=$(cat "$dir/home/state/$id.meta")
+  out=$(run_control "$dir" "$id" relaunch "$@" --note "must refuse"); rc=$?
+  expect_code 1 "$rc" "agy relaunch $* should refuse"
+  assert_contains "$out" "$expected" "agy relaunch $* refusal lacked its reason"
+  [ "$(cat "$dir/fake/command")" = agy ] || fail "a refused agy relaunch ($*) stopped the running agent"
+  [ ! -s "$dir/fake/literal" ] || fail "a refused agy relaunch ($*) sent lifecycle input"
+  [ "$(cat "$dir/home/state/$id.meta")" = "$meta_before" ] || fail "a refused agy relaunch ($*) changed the task record"
+  [ ! -e "$dir/home/state/$id.control-relaunch" ] || fail "a refused agy relaunch ($*) created a durable journal"
+}
+
+test_agy_disallowed_model_relaunch_refuses_before_stop() {
+  local dir id=rl-agy-38
+  dir=$(new_case agy-38 "$id")
+  add_agy_task "$dir" "$id" gemini-3.7-flash-medium medium
+  assert_agy_relaunch_refused_before_stop "$dir" "$id" "only launches gemini-3.7-flash-low" --model gemini-3.8-flash-high
+  pass "fm-control relaunch: an agy relaunch onto a model outside the allowlist refuses before stopping the agent"
+}
+
+test_agy_conflicting_model_and_effort_relaunch_refuses_before_stop() {
+  local dir id=rl-agy-conflict
+  dir=$(new_case agy-conflict "$id")
+  add_agy_task "$dir" "$id" gemini-3.7-flash-medium medium
+  assert_agy_relaunch_refused_before_stop "$dir" "$id" "disagrees with model 'gemini-3.7-flash-low'" \
+    --model gemini-3.7-flash-low --effort high
+  pass "fm-control relaunch: an agy relaunch with a conflicting model and effort refuses before stopping the agent"
+}
+
+test_agy_pre_catalog_recorded_model_relaunch_refuses_before_stop() {
+  local dir id=rl-agy-legacy
+  dir=$(new_case agy-legacy "$id")
+  add_agy_task "$dir" "$id" gemini-3.7-flash medium
+  assert_agy_relaunch_refused_before_stop "$dir" "$id" "got 'gemini-3.7-flash'"
+  pass "fm-control relaunch: an agy task recorded on a pre-catalog model refuses before stopping the agent"
 }
 
 test_explicit_model_wins_over_the_recorded_one() {
@@ -1688,6 +1727,9 @@ test_explicit_model_wins_over_the_recorded_one
 test_agy_model_only_relaunch_rederives_the_effort
 test_agy_effort_only_relaunch_picks_the_matching_model
 test_agy_unsupported_effort_relaunch_refuses_before_stop
+test_agy_disallowed_model_relaunch_refuses_before_stop
+test_agy_conflicting_model_and_effort_relaunch_refuses_before_stop
+test_agy_pre_catalog_recorded_model_relaunch_refuses_before_stop
 test_relaunch_onto_an_unverified_harness_is_refused
 test_prior_harness_turnend_registry_entry_is_cleared
 test_wiring_removal_failure_refuses_before_replacement_arm

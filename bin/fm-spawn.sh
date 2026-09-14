@@ -1844,29 +1844,12 @@ case "$HARNESS" in
     }
     # Captain-approved AC-2: agy only ever launches Gemini 3.7 Flash, enforced
     # here in the launch path so a hand-typed --model or a stale dispatch
-    # profile cannot bypass it. agy 1.2.x encodes effort in the model id's
-    # suffix, so an empty/default model resolves to the variant an explicit
-    # low|medium|high --effort names (medium otherwise), the recorded effort is
-    # that suffix, and an explicit --effort naming a different level is
-    # refused rather than silently picking one.
-    if [ -z "$MODEL" ] || [ "$MODEL" = default ]; then
-      case "$EFFORT" in
-        low|medium|high) MODEL=gemini-3.7-flash-$EFFORT ;;
-        *) MODEL=gemini-3.7-flash-medium ;;
-      esac
-    fi
-    case "$MODEL" in
-      gemini-3.7-flash-low|gemini-3.7-flash-medium|gemini-3.7-flash-high) : ;;
-      *)
-        echo "error: harness=agy only launches gemini-3.7-flash-low, gemini-3.7-flash-medium, or gemini-3.7-flash-high; got '$MODEL'" >&2
-        exit 1
-        ;;
-    esac
-    if [ -n "$EFFORT" ] && [ "$EFFORT" != default ] && [ "$EFFORT" != "${MODEL##*-}" ]; then
-      echo "error: harness=agy encodes effort in the model id; --effort '$EFFORT' disagrees with model '$MODEL' (effort ${MODEL##*-}). Pick the gemini-3.7-flash-$EFFORT model or drop --effort." >&2
-      exit 1
-    fi
-    EFFORT=${MODEL##*-}
+    # profile cannot bypass it. fm-harness.sh owns the resolution so
+    # fm-control.sh relaunch can apply the identical rule before it stops the
+    # running agent.
+    AGY_PROFILE=$("$SCRIPT_DIR/fm-harness.sh" resolve-agy-profile "$MODEL" "$EFFORT") || exit 1
+    MODEL=${AGY_PROFILE% *}
+    EFFORT=${AGY_PROFILE#* }
     ;;
   pi|pi-signed)
     PI_BIN=$(resolve_pi_executable "$HARNESS") || {

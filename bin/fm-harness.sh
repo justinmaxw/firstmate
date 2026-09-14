@@ -19,6 +19,14 @@
 #                                        codex-native/<id>. Other efforts retain
 #                                        their adapter's existing policy. Native
 #                                        Codex validates model support at startup.
+#        fm-harness.sh resolve-agy-profile <model> <effort>
+#                                        print "<model> <effort>" for an agy launch, or
+#                                        refuse. agy only launches Gemini 3.7 Flash, whose
+#                                        ids encode effort as a suffix: no model resolves
+#                                        to the variant a low|medium|high effort names
+#                                        (medium otherwise), the effort is the chosen
+#                                        model's suffix, and a model outside the allowlist
+#                                        or an effort disagreeing with its suffix refuses.
 #        fm-harness.sh ancestry [<pid>] print "<strength> <harness>" for the nearest
 #                                        harness process at or above <pid> (default this
 #                                        process), or nothing when the walk finds none.
@@ -501,8 +509,31 @@ validate_native_effort() {
   return 1
 }
 
+resolve_agy_profile() {
+  local model=${1:-} effort=${2:-}
+  if [ -z "$model" ] || [ "$model" = default ]; then
+    case "$effort" in
+      low|medium|high) model=gemini-3.7-flash-$effort ;;
+      *) model=gemini-3.7-flash-medium ;;
+    esac
+  fi
+  case "$model" in
+    gemini-3.7-flash-low|gemini-3.7-flash-medium|gemini-3.7-flash-high) ;;
+    *)
+      echo "error: harness=agy only launches gemini-3.7-flash-low, gemini-3.7-flash-medium, or gemini-3.7-flash-high; got '$model'" >&2
+      return 1
+      ;;
+  esac
+  if [ -n "$effort" ] && [ "$effort" != default ] && [ "$effort" != "${model##*-}" ]; then
+    echo "error: harness=agy encodes effort in the model id; --effort '$effort' disagrees with model '$model' (effort ${model##*-}). Pick the gemini-3.7-flash-$effort model or drop --effort." >&2
+    return 1
+  fi
+  printf '%s %s\n' "$model" "${model##*-}"
+}
+
 case "${1:-}" in
   validate-native-effort) shift; validate_native_effort "$@" ;;
+  resolve-agy-profile) shift; resolve_agy_profile "$@" ;;
   ancestry)
     case "${2:-}" in
       ''|*[!0-9]*) [ -z "${2:-}" ] || { echo "error: ancestry takes a numeric pid" >&2; exit 2; } ;;

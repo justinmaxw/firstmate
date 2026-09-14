@@ -92,7 +92,7 @@ gemini-3.1-pro-high	Gemini 3.1 Pro (High)
 
 Every listed Gemini id carries its effort as a suffix; the bare `gemini-3.7-flash` literal the agy 1.1.20 adapter pinned is no longer listed.
 The captain-approved AC-2 allowlist keeps that pin's intent against the suffixed ids: `bin/fm-spawn.sh` launches only `gemini-3.7-flash-low`, `gemini-3.7-flash-medium`, or `gemini-3.7-flash-high`, resolves an empty or `default` model to the variant an explicit `low|medium|high` effort names (`gemini-3.7-flash-medium` otherwise), and refuses every other id.
-Because the effort rides the model id, fm-spawn passes no separate `--effort` flag, records the suffix as the task's effort, and refuses an explicit `--effort` that disagrees with the suffix; `bin/fm-control.sh relaunch` re-derives the effort from whichever model the replacement uses, so a model-only or effort-only relaunch never carries a stale effort into that refusal after the running agent is stopped.
+Because the effort rides the model id, fm-spawn passes no separate `--effort` flag, records the suffix as the task's effort, and refuses an explicit `--effort` that disagrees with the suffix; `bin/fm-harness.sh resolve-agy-profile` owns that rule, and `bin/fm-control.sh relaunch` applies it before stopping anything, so a model-only or effort-only relaunch never carries a stale effort into a refusal, and a disallowed, conflicting, or pre-catalog profile refuses while the running agent is still untouched.
 `agy --help` still documents `--effort` as `low|medium|high`, but a suffixed id needs no companion flag:
 
 ```
