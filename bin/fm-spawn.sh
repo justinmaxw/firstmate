@@ -1600,9 +1600,10 @@ launch_template() {
     # agy (Antigravity CLI): --prompt-interactive "<brief>" starts the supervised
     # interactive session and auto-submits it, so the brief rides the launch
     # command (verified: a multi-line brief submitted itself with no extra Enter,
-    # agy 1.2.0). --model takes the bare catalog id from `agy models`
-    # (gemini-3.8-flash-high, never the unlisted bare gemini-3.8-flash).
-    # --effort takes low|medium|high. --dangerously-skip-permissions
+    # agy 1.2.0). --model takes the bare catalog id from `agy models`; agy
+    # 1.2.x ids carry their effort as a suffix (gemini-3.7-flash-medium), so no
+    # separate --effort flag is passed (verified live, agy 1.2.2: --model
+    # gemini-3.7-flash-medium alone is accepted). --dangerously-skip-permissions
     # auto-approves every tool call, which an unattended crewmate needs.
     # Every task worktree is a fresh path, so agy would show a folder-trust
     # dialog ("Do you trust the contents of this project?") and no launch flag
@@ -1819,24 +1820,14 @@ if [ "$KIND" = secondmate ] && [ "$HARNESS" = rovo ]; then
   exit 1
 fi
 
-# agy (Antigravity CLI) is verified as a CREWMATE/SCOUT adapter only, the same
-# reason and the same refusal shape as muse above: no confirmed hook/lifecycle
-# surface exists for it to build a primary supervision protocol on, and
-# secondmate support needs its own separate credential/lifecycle design
-# (captain-approved spec AC-9).
-if [ "$KIND" = secondmate ] && [ "$HARNESS" = agy ]; then
-  echo "error: agy is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary supervision protocol. Select a harness verified for secondmates." >&2
-  exit 1
-fi
-
 case "$HARNESS" in
   agy)
     # The raw launch command escape hatch exists to verify a genuinely
     # unverified adapter. agy already has a fully verified template whose
     # credential preflight and subscription-only billing refusal are
     # gated on the __AGYBIN__ placeholder that only launch_template()'s own
-    # agy branch inserts, and whose model-catalog validation and effort
-    # normalization below run against fm-spawn's own --model/--effort flags -
+    # agy branch inserts, and whose model allowlist, model-catalog validation,
+    # and effort derivation below run against fm-spawn's own --model/--effort flags -
     # none of which a raw command's argv participates in. A raw command whose
     # first word resolves to agy would launch with none of those checks ever
     # invoked, silently bypassing all of them rather than failing loudly.
@@ -1851,17 +1842,27 @@ case "$HARNESS" in
       echo "error: agy executable not found on PATH; install Antigravity CLI or select a different verified harness" >&2
       exit 1
     }
-    # effort_flag_for_harness ALWAYS emits an --effort value for agy, because
-    # agy's own CLI requires one whenever --model is given, folding an empty,
-    # `default`, or unsupported class onto medium. Record that same resolved
-    # value here so task metadata names the effort the pane actually
-    # launched: for every other adapter `effort=default` truthfully means
-    # "no effort flag was passed", but agy has no flagless mode for that to
-    # describe.
-    case "$EFFORT" in
-      low|medium|high) : ;;
-      *) EFFORT=medium ;;
+    # Captain-approved AC-2: agy only ever launches Gemini 3.7 Flash, enforced
+    # here in the launch path so a hand-typed --model or a stale dispatch
+    # profile cannot bypass it. agy 1.2.x encodes effort in the model id's
+    # suffix, so an empty/default model resolves to the medium variant, the
+    # recorded effort is that suffix, and an explicit --effort naming a
+    # different level is refused rather than silently picking one.
+    if [ -z "$MODEL" ] || [ "$MODEL" = default ]; then
+      MODEL=gemini-3.7-flash-medium
+    fi
+    case "$MODEL" in
+      gemini-3.7-flash-low|gemini-3.7-flash-medium|gemini-3.7-flash-high) : ;;
+      *)
+        echo "error: harness=agy only launches gemini-3.7-flash-low, gemini-3.7-flash-medium, or gemini-3.7-flash-high; got '$MODEL'" >&2
+        exit 1
+        ;;
     esac
+    if [ -n "$EFFORT" ] && [ "$EFFORT" != default ] && [ "$EFFORT" != "${MODEL##*-}" ]; then
+      echo "error: harness=agy encodes effort in the model id; --effort '$EFFORT' disagrees with model '$MODEL' (effort ${MODEL##*-}). Pick the gemini-3.7-flash-$EFFORT model or drop --effort." >&2
+      exit 1
+    fi
+    EFFORT=${MODEL##*-}
     ;;
   pi|pi-signed)
     PI_BIN=$(resolve_pi_executable "$HARNESS") || {
@@ -2110,23 +2111,6 @@ model_flag_for_harness() {
 
 effort_flag_for_harness() {
   local harness=$1 effort=$2 model=${3:-}
-  if [ "$harness" = agy ]; then
-    # agy's own CLI REQUIRES --effort whenever --model is given (verified
-    # live, agy 1.1.20: omitting it fails loudly with "--model <id> requires
-    # --effort (available: low, medium, high)"), so the generic "omit an
-    # unset/unsupported effort" rule below cannot apply here - agy has no
-    # flagless default to fall back to. medium is the captain-approved
-    # default when the caller names none; an unsupported class (xhigh, max)
-    # falls back to that same default instead of passing a value agy would
-    # reject, preserving launch success the same way every other harness's
-    # unsupported-value handling does.
-    case "$effort" in
-      low|medium|high) : ;;
-      *) effort=medium ;;
-    esac
-    printf -- '--effort %s ' "$(shell_quote "$effort")"
-    return 0
-  fi
   [ -n "$effort" ] && [ "$effort" != default ] || return 0
   case "$harness" in
     claude)
@@ -2193,7 +2177,7 @@ effort_flag_for_harness() {
     # kimi likewise has no reasoning-effort flag; the requested axis stays in
     # task metadata but never reaches the launch command. Cursor encodes effort
     # in model ids such as cursor-grok-4.5-high, so it also receives no separate
-    # effort flag.
+    # effort flag; agy 1.2.x does the same (gemini-3.7-flash-medium).
   esac
 }
 
@@ -4284,7 +4268,6 @@ case "$HARNESS" in
   cursor) LAUNCH=${LAUNCH//__CURSORBIN__/"$(shell_quote "$CURSOR_BIN")"} ;;
   gemini) LAUNCH=${LAUNCH//__GEMINISETTINGS__/"$(shell_quote "$STATE_REAL/$ID.gemini-settings.json")"} ;;
   omp) LAUNCH=${LAUNCH//__OMPBIN__/"$(shell_quote "$OMP_BIN")"} ;;
-  agy) LAUNCH=${LAUNCH//__AGYBIN__/"$(shell_quote "$AGY_BIN")"} ;;
 esac
 LAUNCH=${LAUNCH//__WORKTREE__/$sq_worktree}
 case "$HARNESS" in

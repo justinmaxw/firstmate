@@ -69,7 +69,7 @@ capture() {
 # reply token would false-positive on the shell echo (including across tmux
 # wrapped rows).
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l \
-  "HOME=\"$AGY_HOME\" $AGY_BIN --prompt-interactive \"Add 12345 and 67890. Reply with exactly the sum and nothing else\" --model gemini-3.8-flash-low --effort low --dangerously-skip-permissions" \
+  "HOME=\"$AGY_HOME\" $AGY_BIN --prompt-interactive \"Add 12345 and 67890. Reply with exactly the sum and nothing else\" --model gemini-3.7-flash-low --dangerously-skip-permissions" \
   || fail "could not type the agy launch line"
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter \
   || fail "could not submit the agy launch line"

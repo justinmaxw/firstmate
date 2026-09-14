@@ -256,7 +256,7 @@ When the file exists, `fm-spawn.sh` refuses crewmate and scout launches without 
 Secondmate launches are exempt because they resolve the secondmate harness and any optional secondmate model or effort tokens instead.
 Unsupported effort values are still recorded in task meta when passed to `fm-spawn.sh`, but the launch template omits any effort flag that the selected harness does not accept.
 That keeps spawn launch compatible across claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, gemini, muse, rovo, and omp while preserving the requested profile for later audit.
-`agy` is the one exception, because its own CLI refuses to launch without an effort value: spawn resolves one and records the value the pane actually launched, and the `harness-adapters` skill owns that per-adapter detail.
+`agy` is the one exception, because its model ids encode effort as a suffix: spawn records that suffix as the effort, refuses an explicit effort that disagrees with it, and the `harness-adapters` skill owns that per-adapter detail.
 
 ## Optional secondmates
 
