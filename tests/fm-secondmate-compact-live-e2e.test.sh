@@ -22,14 +22,7 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-if [ "${FM_SECONDMATE_COMPACT_LIVE_E2E:-0}" != 1 ]; then
-  echo "skip: set FM_SECONDMATE_COMPACT_LIVE_E2E=1 to run the real Claude/Herdr secondmate compaction guard"
-  exit 0
-fi
-
-for tool in git herdr jq claude; do
-  command -v "$tool" >/dev/null 2>&1 || { echo "skip: $tool not found"; exit 0; }
-done
+fm_live_gate opt-in FM_SECONDMATE_COMPACT_LIVE_E2E git herdr jq claude
 
 CLAUDE_VERSION=$(claude --version 2>/dev/null | head -1)
 echo "evidence: claude=$CLAUDE_VERSION herdr=$(herdr --version 2>/dev/null | head -1)"

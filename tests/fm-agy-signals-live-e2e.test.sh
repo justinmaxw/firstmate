@@ -24,6 +24,9 @@
 #     and no restored text, matching the "no clear key" control-plane fact
 set -u
 
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGY_BIN=$(command -v agy 2>/dev/null || true)
 REAL_TMUX=$(command -v tmux 2>/dev/null || true)
@@ -47,10 +50,8 @@ pass() {
   printf 'ok - %s\n' "$1"
 }
 
-if [ "${FM_AGY_SIGNALS_LIVE:-0}" != 1 ]; then
-  echo "skip: set FM_AGY_SIGNALS_LIVE=1 to run the real Antigravity CLI signal drift guard (spends real subscription quota)"
-  exit 0
-fi
+# Opt-in: every real run spends the captain's Antigravity subscription quota.
+fm_live_gate opt-in FM_AGY_SIGNALS_LIVE agy tmux
 
 [ -x "$AGY_BIN" ] || fail "FM_AGY_SIGNALS_LIVE=1 but no real agy executable is installed on PATH"
 [ -x "$REAL_TMUX" ] || fail "FM_AGY_SIGNALS_LIVE=1 but tmux is not installed"
