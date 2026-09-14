@@ -682,6 +682,18 @@ resolve_relaunch_profile() {
   else
     TARGET_EFFORT=default
   fi
+  if [ "$TARGET_HARNESS" = agy ]; then
+    local agy_profile
+    if [ "$EFFORT_SET" = 0 ]; then
+      TARGET_EFFORT=default
+    elif [ "$MODEL_SET" = 0 ]; then
+      TARGET_MODEL=default
+    fi
+    agy_profile=$("$SCRIPT_DIR/fm-harness.sh" resolve-agy-profile "$TARGET_MODEL" "$TARGET_EFFORT") \
+      || die "relaunching $ID onto agy with model '$TARGET_MODEL' and effort '$TARGET_EFFORT' would stop the running agent for a launch that must be refused"
+    TARGET_MODEL=${agy_profile% *}
+    TARGET_EFFORT=${agy_profile#* }
+  fi
   if [ "$TARGET_EFFORT" = ultra ]; then
     "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$TARGET_HARNESS" "$TARGET_MODEL" "$TARGET_EFFORT" || return 1
   fi
