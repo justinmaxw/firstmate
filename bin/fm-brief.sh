@@ -173,7 +173,7 @@ for a in "$@"; do
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --spec) want_value=spec ;;
     --spec=*) SPEC=${a#--spec=} ;;
-    --spec-ac) want_value='spec-ac' ;;
+    --spec-ac) want_value=spec-ac ;;
     --spec-ac=*) SPEC_ACS=${a#--spec-ac=} ;;
     # yolo never reaches the worker: it is firstmate's merge authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
