@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# tests/agy-helpers.sh - shared fixtures for the agy (Antigravity CLI) adapter
-# suites (fm-agy-harness, fm-spawn-agy-credential-preflight, and
-# fm-spawn-agy-model-allowlist).
+# tests/agy-helpers.sh - shared fixtures for the agy (Antigravity CLI)
+# credential-preflight and subscription-only billing suite
+# (fm-spawn-agy-credential-preflight).
 #
 # The fake tmux stub, the fake `agy` on PATH, and the isolated $HOME that
 # carries agy's credential and settings files all have to move in lockstep with
@@ -12,12 +12,11 @@
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# bin/fm-harness.sh checks verified ENV markers before ancestry, and agy's own
-# ANTIGRAVITY_AGENT=1 is one of them. Drop every ambient marker so the verdicts
-# these suites assert do not depend on which harness launched them - an agy
-# crewmate runs them through a shell tool that carries ANTIGRAVITY_AGENT=1, and
-# the ancestry cases would then assert the inherited marker instead.
-unset CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS ANTIGRAVITY_AGENT
+# bin/fm-harness.sh checks verified ENV markers before ancestry. Drop every
+# ambient marker so the verdicts these suites assert do not depend on which
+# harness launched them; agy itself publishes no marker of its own (see
+# bin/fm-harness.sh and the agy harness reference), so it is not among these.
+unset CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS
 
 AGY_SPAWN="$ROOT/bin/fm-spawn.sh"
 AGY_HARNESS_PROBE="$ROOT/bin/fm-harness.sh"
@@ -68,11 +67,17 @@ make_agy_fakebin() {  # <dir>
 set -u
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+  *"#{cursor_y}"*) printf '1\n'; exit 0 ;;
 esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows) exit 0 ;;
   has-session|new-session|new-window|kill-window) exit 0 ;;
+  # These suites only exercise the credential and subscription-only
+  # preflight, never the trust dialog itself, so trust pre-registration
+  # against the real (throwaway) HOME always succeeds and the post-launch
+  # readiness gate only ever needs a busy verdict, never the dialog branch.
+  capture-pane) printf 'esc to cancel                                Gemini 3.8 Flash · low\n'; exit 0 ;;
   send-keys)
     prev=
     for arg in "$@"; do

@@ -568,6 +568,11 @@ EOF
   mkdir -p "$home/.gemini/antigravity-cli"
   printf '%s\n' '{"model":"Gemini 3.8 Flash (High)","trustedWorkspaces":["/home/someone/elsewhere"]}' \
     > "$home/.gemini/antigravity-cli/settings.json"
+  # The credential preflight (AC-1) refuses a launch with no worker-reachable
+  # Antigravity session; a genuinely unauthenticated worker is covered in its
+  # own dedicated suite (fm-spawn-agy-credential-preflight), so every case
+  # here starts from an authenticated one.
+  printf 'opaque-session-state\n' > "$home/.gemini/antigravity-cli/jetski_state.pbtxt"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   touch "$home/state/.last-watcher-beat"
   : > "$case_dir/launch.log"
@@ -781,16 +786,22 @@ test_agy_unregistered_path_ignores_busy_until_the_dialog_is_answered() {
   rec=$(make_agy_spawn_case race "$id")
   read_agy_spawn_record "$rec"
   store="$HOME_DIR/.gemini/antigravity-cli/settings.json"
-  printf '%s\n' '{not json' > "$store"
+  # A read-only store fails fm-agy-trust.sh's writability check while staying
+  # valid JSON, so it forces the same unregistered path this case needs
+  # without also tripping the subscription-only billing refusal, which reads
+  # this identical file and would otherwise refuse the spawn outright on
+  # unparseable JSON before the race scenario is even reached.
+  chmod 0444 "$store"
   before=$(cat "$store")
   out=$(FM_FAKE_AGY_RACE=1 run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
     "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low)
   rc=$?
+  chmod 0644 "$store"
   expect_code 0 "$rc" "an agy spawn that meets the dialog after a premature busy verdict should still succeed"
   assert_contains "$out" "could not pre-register agy workspace trust" \
-    "a broken store did not surface the registration warning"
+    "a read-only store did not surface the registration warning"
   after=$(cat "$store")
-  [ "$before" = "$after" ] || fail "the spawn rewrote an unparseable agy store"
+  [ "$before" = "$after" ] || fail "the spawn rewrote a read-only agy store"
   [ "$(cat "$CASE_DIR/agy.state")" = busy ] \
     || fail "the spawn reported success before the answered dialog turned busy (state: $(cat "$CASE_DIR/agy.state"))"
   enters=$(count_enter_sends "$CASE_DIR/tmux-calls.log")
@@ -805,10 +816,13 @@ test_agy_unregistered_path_without_a_dialog_fails_the_spawn() {
   rec=$(make_agy_spawn_case nodialog "$id")
   read_agy_spawn_record "$rec"
   store="$HOME_DIR/.gemini/antigravity-cli/settings.json"
-  printf '%s\n' '{not json' > "$store"
+  # See the race test above: read-only forces the unregistered path without
+  # tripping the subscription-only check that reads this same file.
+  chmod 0444 "$store"
   rc=0
   out=$(FM_FAKE_AGY_ASSUME_TRUSTED=1 run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
     "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
+  chmod 0644 "$store"
   [ "$rc" -ne 0 ] || fail "a busy verdict on an unregistered path with no dialog must not pass the gate"
   assert_contains "$out" "never showed its folder-trust dialog on an unregistered worktree" \
     "the failure did not name the unconfirmed workspace"
