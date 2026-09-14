@@ -1,0 +1,47 @@
+=== fm-spawn agy-med-x1 agy --model gemini-3.7-flash-medium -> exit 0
+--- launch payload:
+--prompt-interactive "<brief>" --model 'gemini-3.7-flash-medium' --dangerously-skip-permissions
+--- meta:
+harness=agy
+model=gemini-3.7-flash-medium
+effort=medium
+=== fm-spawn agy-low-x1 agy --model gemini-3.7-flash-low -> exit 0
+--- launch payload:
+--prompt-interactive "<brief>" --model 'gemini-3.7-flash-low' --dangerously-skip-permissions
+--- meta:
+harness=agy
+model=gemini-3.7-flash-low
+effort=low
+=== fm-spawn agy-high-x1 agy --model gemini-3.7-flash-high -> exit 0
+--- launch payload:
+--prompt-interactive "<brief>" --model 'gemini-3.7-flash-high' --dangerously-skip-permissions
+--- meta:
+harness=agy
+model=gemini-3.7-flash-high
+effort=high
+=== fm-spawn agy-dflt-x1 agy  -> exit 0
+--- launch payload:
+--prompt-interactive "<brief>" --model 'gemini-3.7-flash-medium' --dangerously-skip-permissions
+--- meta:
+harness=agy
+model=gemini-3.7-flash-medium
+effort=medium
+=== fm-spawn agy-efflow-x1 agy --effort low -> exit 0
+--- launch payload:
+--prompt-interactive "<brief>" --model 'gemini-3.7-flash-low' --dangerously-skip-permissions
+--- meta:
+harness=agy
+model=gemini-3.7-flash-low
+effort=low
+=== fm-spawn agy-r38-x1 agy --model gemini-3.8-flash-high -> exit 1
+error: harness=agy only launches gemini-3.7-flash-low, gemini-3.7-flash-medium, or gemini-3.7-flash-high; got 'gemini-3.8-flash-high'
+--- no task meta published
+=== fm-spawn agy-rpro-x1 agy --model gemini-3.1-pro-high -> exit 1
+error: harness=agy only launches gemini-3.7-flash-low, gemini-3.7-flash-medium, or gemini-3.7-flash-high; got 'gemini-3.1-pro-high'
+--- no task meta published
+=== fm-spawn agy-rbare-x1 agy --model gemini-3.7-flash -> exit 1
+error: harness=agy only launches gemini-3.7-flash-low, gemini-3.7-flash-medium, or gemini-3.7-flash-high; got 'gemini-3.7-flash'
+--- no task meta published
+=== fm-spawn agy-rconf-x1 agy --model gemini-3.7-flash-low --effort high -> exit 1
+error: harness=agy encodes effort in the model id; --effort 'high' disagrees with model 'gemini-3.7-flash-low' (effort low). Pick the gemini-3.7-flash-high model or drop --effort.
+--- no task meta published

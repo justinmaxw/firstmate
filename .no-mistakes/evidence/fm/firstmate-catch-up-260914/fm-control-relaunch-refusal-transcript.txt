@@ -1,0 +1,35 @@
+=== relaunch rl38 (recorded model=gemini-3.7-flash-medium effort=medium) args: --model gemini-3.8-flash-high -> exit 1
+  | error: harness=agy only launches gemini-3.7-flash-low, gemini-3.7-flash-medium, or gemini-3.7-flash-high; got 'gemini-3.8-flash-high'
+  | error: relaunching rl38 onto agy with model 'gemini-3.8-flash-high' and effort 'default' would stop the running agent for a launch that must be refused
+  pane before: 91208 sleep   pane after: 91208 sleep
+  RESULT: running agent untouched
+  RESULT: task meta unchanged
+  RESULT: no relaunch journal
+=== relaunch rlpro (recorded model=gemini-3.7-flash-medium effort=medium) args: --model gemini-3.1-pro-high -> exit 1
+  | error: harness=agy only launches gemini-3.7-flash-low, gemini-3.7-flash-medium, or gemini-3.7-flash-high; got 'gemini-3.1-pro-high'
+  | error: relaunching rlpro onto agy with model 'gemini-3.1-pro-high' and effort 'default' would stop the running agent for a launch that must be refused
+  pane before: 92184 sleep   pane after: 92184 sleep
+  RESULT: running agent untouched
+  RESULT: task meta unchanged
+  RESULT: no relaunch journal
+=== relaunch rlconf (recorded model=gemini-3.7-flash-medium effort=medium) args: --model gemini-3.7-flash-low --effort high -> exit 1
+  | error: harness=agy encodes effort in the model id; --effort 'high' disagrees with model 'gemini-3.7-flash-low' (effort low). Pick the gemini-3.7-flash-high model or drop --effort.
+  | error: relaunching rlconf onto agy with model 'gemini-3.7-flash-low' and effort 'high' would stop the running agent for a launch that must be refused
+  pane before: 93148 sleep   pane after: 93148 sleep
+  RESULT: running agent untouched
+  RESULT: task meta unchanged
+  RESULT: no relaunch journal
+=== relaunch rllegacy (recorded model=gemini-3.7-flash effort=medium) args:  -> exit 1
+  | error: harness=agy only launches gemini-3.7-flash-low, gemini-3.7-flash-medium, or gemini-3.7-flash-high; got 'gemini-3.7-flash'
+  | error: relaunching rllegacy onto agy with model 'gemini-3.7-flash' and effort 'default' would stop the running agent for a launch that must be refused
+  pane before: 94140 sleep   pane after: 94140 sleep
+  RESULT: running agent untouched
+  RESULT: task meta unchanged
+  RESULT: no relaunch journal
+=== relaunch rlxhigh (recorded model=gemini-3.7-flash-medium effort=medium) args: --effort xhigh -> exit 1
+  | error: harness=agy encodes effort in the model id; --effort 'xhigh' disagrees with model 'gemini-3.7-flash-medium' (effort medium). Pick the gemini-3.7-flash-xhigh model or drop --effort.
+  | error: relaunching rlxhigh onto agy with model 'default' and effort 'xhigh' would stop the running agent for a launch that must be refused
+  pane before: 94707 sleep   pane after: 94707 sleep
+  RESULT: running agent untouched
+  RESULT: task meta unchanged
+  RESULT: no relaunch journal
