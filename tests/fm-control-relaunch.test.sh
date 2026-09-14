@@ -1521,6 +1521,11 @@ add_promoted_scout_task_without_origin() {  # <case-dir> <id>
   [ -z "$(git -C "$proj" remote)" ] || fail "the fixture project must have no origin remote"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$proj" --scout >/dev/null \
     || fail "scaffolding the scout brief exited non-zero"
+  local brief="$home/data/$id/brief.md" content
+  content=$(cat "$brief")
+  content=${content//'{TASK}'/scout the remote-less project for $id}
+  content=${content//'{FIRSTMATE_SPEC}'/Report what a local-only ship would change.}
+  printf '%s\n' "$content" > "$brief"
   {
     echo "window=fmses:fm-$id"
     echo "endpoint_task_id=$id"
