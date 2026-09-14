@@ -1,27 +1,7 @@
 #!/usr/bin/env bash
-# Opt-in live guard for the agy (Antigravity CLI) crewmate adapter, gated and
-# self-skipping the same way tests/fm-muse-signals-live-e2e.test.sh and
-# tests/fm-grok-stop-live-e2e.test.sh already are. Run after every Antigravity
-# CLI upgrade and before trusting refreshed evidence in
-# docs/verification/runtime-backends.md
-# (.agents/skills/firstmate-coding-guidelines/SKILL.md "Harness-dependent
-# checks").
-#
-# Unlike Muse's --provider echo, agy has no free/mock inference mode: every
-# real invocation here spends the captain's own Google AI Pro/Ultra
-# subscription quota. This is why the guard is opt-in rather than part of
-# standard CI, and why every prompt below is kept short and --effort low.
-#
-# Exercises, against the REAL installed binary and the captain's own real
-# authenticated session (never read, only relied upon):
-#   - the credential preflight's file-existence fact is genuinely true
-#   - the interactive launch shape (-i, --model, --effort,
-#     --dangerously-skip-permissions) produces a real supervised turn
-#   - the verified delivery-confirmation footer ("esc to cancel" busy,
-#     "? for shortcuts" idle) against real rendered output, through the
-#     shared structural composer classifier
-#   - a real Escape interrupt cleanly cancels a turn with an empty composer
-#     and no restored text, matching the "no clear key" control-plane fact
+# Live drift guard for the Antigravity CLI adapter's vendor-controlled surface:
+# process name, trust dialog, rendered busy/interrupt/exit behavior.
+# Opt-in because it submits real prompts (no echo provider exists for agy).
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -50,152 +30,164 @@ pass() {
   printf 'ok - %s\n' "$1"
 }
 
-# Opt-in: every real run spends the captain's Antigravity subscription quota.
 fm_live_gate opt-in FM_AGY_SIGNALS_LIVE agy tmux
-
-[ -x "$AGY_BIN" ] || fail "FM_AGY_SIGNALS_LIVE=1 but no real agy executable is installed on PATH"
-[ -x "$REAL_TMUX" ] || fail "FM_AGY_SIGNALS_LIVE=1 but tmux is not installed"
-
-CRED_FILE="${HOME:-}/.gemini/antigravity-cli/jetski_state.pbtxt"
-[ -s "$CRED_FILE" ] || fail "FM_AGY_SIGNALS_LIVE=1 but no worker-reachable Antigravity credential is present at '$CRED_FILE' - sign in once with 'agy' first"
+[ -n "$AGY_BIN" ] || fail "agy is not installed"
 
 LAB=$(mktemp -d "${TMPDIR:-/tmp}/fm-agy-signals.XXXXXX") || fail "could not create the isolated agy lab"
 trap cleanup EXIT
-mkdir -p "$LAB/bin" "$LAB/workspace"
+mkdir -p "$LAB/workspace"
 git -C "$LAB/workspace" init -q || fail "could not initialize the isolated agy workspace"
+git -C "$LAB/workspace" config user.email "guard@local" || fail "could not configure the isolated agy workspace"
+git -C "$LAB/workspace" config user.name "guard" || fail "could not configure the isolated agy workspace"
+git -C "$LAB/workspace" commit -q --allow-empty -m init || fail "could not seed the isolated agy workspace"
 WORKSPACE=$(cd "$LAB/workspace" && pwd -P) || fail "could not resolve the isolated agy workspace"
 
-cat > "$LAB/bin/tmux" <<SH
-#!/usr/bin/env bash
-exec "$REAL_TMUX" -L "$SOCKET" "\$@"
-SH
-chmod +x "$LAB/bin/tmux"
-PATH="$LAB/bin:$PATH"
-export PATH
+# The worker runs under a throwaway HOME holding a copy of ~/.gemini (the
+# method recorded in docs/verification/agy.md), so its trust answer and every
+# other agy write land in the lab store, never the operator's real one.
+AGY_HOME="$LAB/home"
+mkdir -p "$AGY_HOME" || fail "could not create the throwaway agy HOME"
+[ -d "$HOME/.gemini" ] || fail "no ~/.gemini to stage for the throwaway agy HOME"
+cp -R "$HOME/.gemini" "$AGY_HOME/.gemini" || fail "could not stage the throwaway agy credential copy"
 
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
+. "$ROOT/bin/fm-busy-lib.sh"
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-composer-lib.sh"
-# shellcheck source=bin/fm-tmux-lib.sh
-. "$ROOT/bin/fm-tmux-lib.sh"
 
-"$REAL_TMUX" -L "$SOCKET" new-session -d -s "$SESSION" -n control -c "$WORKSPACE" -x 220 -y 50 \
+"$REAL_TMUX" -L "$SOCKET" new-session -d -s "$SESSION" -n control -c "$WORKSPACE" \
   || fail "could not start the isolated tmux server"
-"$REAL_TMUX" -L "$SOCKET" new-window -d -t "$SESSION:" -n agy -c "$WORKSPACE" -- \
-  env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
-  -u GEMINI_API_KEY \
-  AGY_CLI_DISABLE_AUTO_UPDATE=true \
-  "$AGY_BIN" --dangerously-skip-permissions --model gemini-3.7-flash --effort low \
-  -i 'reply with the exact single word: firstmatelivetest' \
-  || fail "could not launch agy with a real interactive turn"
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t "$SESSION:" -n agy -c "$WORKSPACE" \
+  || fail "could not open the isolated agy window"
 
-# A fresh worktree needs a trust dialog accepted before the turn starts.
-TRUSTED=0
-for _ in $(seq 1 100); do
-  if "$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" 2>/dev/null | grep -q 'trust the contents'; then
-    "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
-    TRUSTED=1
-    break
-  fi
-  # --dangerously-skip-permissions does not suppress the trust dialog, but a
-  # pane that is already past it (or never showed one) still counts as ready.
-  if "$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" 2>/dev/null | grep -qE 'shortcuts|esc to cancel'; then
-    TRUSTED=1
-    break
-  fi
-  sleep 0.3
-done
-[ "$TRUSTED" = 1 ] || fail "agy never reached a trusted, ready pane"
+capture() {
+  "$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" -S -100 2>/dev/null || true
+}
 
-BUSY_SEEN=0
-for _ in $(seq 1 100); do
-  CAP=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" 2>/dev/null)
-  if printf '%s' "$CAP" | fm_busy_lines_match agy; then
-    BUSY_SEEN=1
-    break
-  fi
-  sleep 0.2
-done
-[ "$BUSY_SEEN" = 1 ] || fail "the verified agy busy footer ('esc to cancel') never appeared during a real turn"
-pass "agy's real busy footer matches the verified delivery-confirmation regex"
-
-IDLE_SEEN=0
-REPLY_SEEN=0
-for _ in $(seq 1 150); do
-  CAP=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" 2>/dev/null)
-  if ! printf '%s' "$CAP" | fm_busy_lines_match agy; then
-    IDLE_SEEN=1
-    printf '%s' "$CAP" | grep -q 'firstmatelivetest' && REPLY_SEEN=1
-    [ "$REPLY_SEEN" = 1 ] && break
-  fi
-  sleep 0.2
-done
-[ "$IDLE_SEEN" = 1 ] || fail "agy's busy footer never cleared after a real turn completed"
-[ "$REPLY_SEEN" = 1 ] || fail "agy's real reply never echoed the requested exact word"
-pass "agy's real turn completes, clears its busy footer, and echoes the requested reply"
-
-# KNOWN LIMITATION, disclosed rather than hidden (see the agy section of
-# .agents/skills/harness-adapters/SKILL.md and
-# docs/verification/runtime-backends.md "Composer classification"): agy's
-# idle composer box uses a bare `─` rule both above and below its prompt, with
-# no corner glyphs. The shared structural scanner's existing Pi-pair detector
-# (_fm_composer_pi_separator_row) matches that same bare-rule shape - it
-# exists to recognize Pi's own composer, which is drawn the same way - and
-# resolving a pi-pair candidate requires proving Pi identity, which agy
-# correctly fails. The safe, honest result is `unknown`, never a wrong `empty`
-# or `pending`; this assertion pins that current, disclosed behavior rather
-# than asserting the more precise `empty` a future fix could earn once the
-# shared scanner is taught to disambiguate a non-Pi bare-rule box, which is
-# real follow-up work, not a Task 1 requirement.
-COMPOSER_STATE=$(fm_tmux_composer_state "$TARGET")
-[ "$COMPOSER_STATE" = unknown ] \
-  || fail "agy's real idle composer classified as '$COMPOSER_STATE'; expected the disclosed 'unknown' (if this now reads 'empty', the shared scanner's Pi-pair ambiguity has been fixed - update this assertion and the disclosed-limitation docs together)"
-pass "agy's real idle composer classifies as the disclosed, safe 'unknown' rather than a wrong empty/pending verdict"
-
-# Real Escape interrupt on a real, deliberately slow turn.
+# The launch prompt asks for a computed answer (12345+67890=80235) so the
+# awaited token never appears in the echoed launch line itself, where a plain
+# reply token would false-positive on the shell echo (including across tmux
+# wrapped rows).
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l \
-  'count slowly from 1 to 100, one number per line, thinking carefully about each one'
-"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
-BUSY_SEEN=0
-for _ in $(seq 1 50); do
-  CAP=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" 2>/dev/null)
-  if printf '%s' "$CAP" | fm_busy_lines_match agy; then
-    BUSY_SEEN=1
-    break
-  fi
-  sleep 0.2
-done
-[ "$BUSY_SEEN" = 1 ] || fail "the slow counting turn never registered busy before the interrupt"
-"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Escape
+  "HOME=\"$AGY_HOME\" $AGY_BIN --prompt-interactive \"Add 12345 and 67890. Reply with exactly the sum and nothing else\" --model gemini-3.8-flash-low --effort low --dangerously-skip-permissions" \
+  || fail "could not type the agy launch line"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter \
+  || fail "could not submit the agy launch line"
 
-INTERRUPTED=0
+# A fresh workspace stops on the folder-trust dialog. Answer the preselected
+# safe choice once it renders. The answer appends the workspace to
+# trustedWorkspaces in the throwaway HOME's copy of the agy settings store.
+screen=
+for _ in $(seq 1 150); do
+  screen=$(capture)
+  case "$screen" in
+    *"Do you trust the contents of this project?"*|*80235*|*80,235*) break ;;
+  esac
+  sleep 0.5
+done
+case "$screen" in
+  *"Do you trust the contents of this project?"*)
+    "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter \
+      || fail "could not answer the agy trust dialog"
+    ;;
+esac
+
+# The initial turn executes and its reply lands; the busy footer must render
+# while it is in flight so the portable matcher has live text to prove.
+# Trivial turns were observed taking one to two minutes (cold start plus model
+# latency), so these windows are generous; the guard is opt-in.
+busy_live=
+for _ in $(seq 1 240); do
+  screen=$(capture)
+  if printf '%s' "$screen" | fm_busy_agy_tail_busy; then busy_live=1; break; fi
+  case "$screen" in *80235*|*80,235*) break ;; esac
+  sleep 1
+done
+[ -n "$busy_live" ] || fail "fm_busy_agy_tail_busy never matched the real agy turn in flight"
+pass "the real agy busy footer matches fm_busy_agy_tail_busy in flight"
+
+for _ in $(seq 1 480); do
+  screen=$(capture)
+  case "$screen" in *80235*|*80,235*) break ;; esac
+  sleep 0.5
+done
+reply=$(capture)
+case "$reply" in
+  *80235*|*80,235*) pass "the real agy worker processed its launch prompt" ;;
+  *) fail "the real agy worker never answered its launch prompt" ;;
+esac
+# The reply can render while the turn is still finishing: the busy footer stays
+# pinned until the idle composer replaces it, so wait for the settled idle row
+# before asserting what the settled pane must not match. The wait itself
+# refreshes $screen: the reply-wait loop above can legitimately break on a
+# frame that still carries the pinned busy footer, and asserting on that stale
+# frame would fail every run whose reply lands mid-turn.
+idle_settled=
+for _ in $(seq 1 120); do
+  screen=$(capture)
+  case "$screen" in *"? for shortcuts"*) idle_settled=1; break ;; esac
+  sleep 0.5
+done
+[ -n "$idle_settled" ] || fail "the agy composer never settled to its idle footer after the reply"
+# Scope to the visible tail the same way the owners do: mid-turn busy rows stay
+# in scrollback after the turn settles and must not count as still busy.
+printf '%s' "$screen" | grep -v '^[[:space:]]*$' | tail -12 | fm_busy_lines_match agy \
+  && fail "harness=agy matched its own idle footer as busy" || true
+printf '%s' "$screen" | fm_busy_agy_tail_busy \
+  && fail "the settled agy footer still matches the busy signature" || true
+
+# The dialog can outlive the turn it gated, so a still-rendered dialog must be
+# dismissed before steering anything: typed text would land in it instead of
+# the composer.
+if case "$(capture)" in *"Do you trust the contents of this project?"*) true ;; *) false ;; esac; then
+  "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter \
+    || fail "could not dismiss the residual agy trust dialog"
+  idle=
+  for _ in $(seq 1 120); do
+    case "$(capture)" in *"? for shortcuts"*) idle=1; break ;; esac
+    sleep 0.5
+  done
+  [ -n "$idle" ] || fail "the agy composer never went idle after the trust answer"
+fi
+
+# Interrupt a genuinely long turn: poll until busy is observed, then send
+# exactly one Escape and wait only for the Interrupted row it prints; a busy
+# footer that merely disappears is not cancellation and no further Escape is
+# sent, so a turn that survives one Escape fails this guard.
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l \
+  "Write a 1500-word essay on the history of glass" \
+  || fail "could not type the long agy prompt"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter \
+  || fail "could not submit the long agy prompt"
 for _ in $(seq 1 100); do
-  CAP=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" 2>/dev/null)
-  if printf '%s' "$CAP" | grep -qi 'Interrupted'; then
-    INTERRUPTED=1
-    break
-  fi
-  sleep 0.2
+  screen=$(capture)
+  printf '%s' "$screen" | fm_busy_agy_tail_busy && break
+  sleep 0.5
 done
-[ "$INTERRUPTED" = 1 ] || fail "a real Escape never produced agy's interrupted acknowledgement"
+printf '%s' "$screen" | fm_busy_agy_tail_busy \
+  || fail "the long agy turn never showed its busy footer"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Escape \
+  || fail "could not send Escape to the real agy turn"
+cancelled=
+for _ in $(seq 1 120); do
+  screen=$(capture)
+  case "$screen" in *Interrupted*) cancelled=1; break ;; esac
+  sleep 0.5
+done
+[ -n "$cancelled" ] || fail "a single Escape never cancelled the real agy turn"
+pass "a single Escape cancels the real agy turn"
 
-# The shared structural classifier cannot yet prove agy's composer empty (see
-# the disclosed limitation above), so this checks the fact fm_control_lib.sh's
-# "no clear key needed" contract actually depends on directly: the interrupted
-# prompt text must NOT be restored into the composer's own LIVE prompt row
-# (unlike muse, which needs a C-u clear for exactly this reason). The
-# interrupted prompt legitimately still appears higher up, in the scrolled-back
-# transcript echo of the turn that was cancelled - that is not the composer and
-# must not fail this check, so only the last non-blank row (the live composer)
-# is inspected.
-COMPOSER_ROW=
-for _ in $(seq 1 30); do
-  COMPOSER_ROW=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" 2>/dev/null | grep '^>' | tail -1)
-  [ "$COMPOSER_ROW" = '>' ] && break
-  sleep 0.2
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "/quit" \
+  || fail "could not type the agy exit command"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter \
+  || fail "could not submit the agy exit command"
+gone=
+for _ in $(seq 1 60); do
+  current=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$TARGET" '#{pane_current_command}' 2>/dev/null || true)
+  case "$current" in *agy*) sleep 0.5 ;; *) gone=1; break ;; esac
 done
-[ "$COMPOSER_ROW" = '>' ] \
-  || fail "agy's live composer row after a real interrupt read '$COMPOSER_ROW', expected a bare empty '>'; the 'no clear key needed' control-plane fact is wrong"
-pass "a real Escape interrupt cleanly cancels the turn and never restores the interrupted prompt into the live composer row"
+[ -n "$gone" ] || fail "/quit never stopped the real agy process"
+pass "/quit stops the real agy process"
 
 cleanup
 trap - EXIT

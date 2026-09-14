@@ -120,7 +120,15 @@
 #   root Firstmate home's state directory before slot allocation and holds it through
 #   task metadata publication. Teardown holds that same lock while proving and
 #   returning a slot, so allocation cannot reuse a slot before its owner record
-#   is published. The local root is whatever bin/fm-wake-lib.sh's
+#   is published. Under that same lock it writes the slot's owner claim, which is
+#   what lets teardown leave a slot reassigned since untouched; bin/fm-wake-lib.sh
+#   owns the claim and bin/fm-teardown.sh owns what it protects. A slot that
+#   cannot be claimed refuses the spawn rather than launching a worker whose slot
+#   could later be released out from under its successor. A spawn that aborts
+#   while it still holds the allocation lock drops its own claim; an abort after
+#   metadata publication has released that lock leaves the claim in place, and
+#   the next spawn's claim replaces it.
+#   The local root is whatever bin/fm-wake-lib.sh's
 #   fm_firstmate_root_home resolves, so a home seeded from another machine anchors
 #   that lock itself rather than failing to resolve one;
 #   contention refuses rather than waits.
@@ -256,8 +264,20 @@
 #   This is an exec environment boundary, not a sandbox for the pane's startup
 #   shell, credential files, same-user processes, or later shell initialization.
 #   See docs/configuration.md for provider/Git setup and supported limits.
+# Claude permission mode (config/claude-permission-mode):
+#   One token selecting the permission flag every claude launch (ship, scout,
+#   secondmate, and relaunch) carries. Absent or `bypass` keeps today's
+#   `--dangerously-skip-permissions`; `auto` launches with `--permission-mode
+#   auto` instead, Claude Code's classifier-reviewed mode, for a captain who
+#   refuses to run workers in bypass mode. Every other part of the claude launch
+#   is unchanged. The token is the file's whitespace-trimmed content; any other
+#   value, or an unreadable file, refuses the spawn before any endpoint,
+#   worktree, or record exists and names the accepted values. The file is read
+#   on every spawn and relaunch, so a change reaches the next launch without a
+#   restart, and it is inherited into secondmate homes (bin/fm-config-inherit-lib.sh).
 #   Launch templates live in launch_template() below; placeholders replaced before launch:
 #     __BRIEF__    absolute path to data/<task-id>/brief.md
+#     __CLAUDEPERMFLAG__ the claude permission flag selected by config/claude-permission-mode
 #     __PIBIN__    quoted concrete Pi-family executable path resolved from PATH
 #     __PITUIMODE__ optional --tui-mode regular when that executable advertises it
 #     __TURNEND__  absolute path to state/<task-id>.turn-ended (for harnesses whose
@@ -292,13 +312,14 @@
 # only after a TUI readiness gate, then a delivery-confirmation gate - the same
 # launch-then-send shape as kimi. Its busy state is a screen-scrape fallback like
 # grok. rovo is crewmate/scout only and is refused for --secondmate, like muse.
-# agy installs neither a hook nor a busy-state binding of any kind: no
-# confirmed hook/lifecycle surface was found for its interactive mode, and its
-# own conversation storage is an undocumented per-conversation SQLite file
-# actively written by the live pane, not a safe structural source to poll (see
-# bin/fm-busy-lib.sh, which registers no source for it - fm_busy_classify
-# reports agy unknown until one is live-verified, matching standalone Kimi
-# before its own verification).
+# agy installs no hook either - it exposes no hook surface at all - so it
+# carries no busy-source wiring and no turn-end hook. Its brief rides the launch
+# command, but a fresh worktree would park it on a folder-trust dialog, so the
+# spawn pre-registers the worktree in agy's own trust store through
+# bin/fm-agy-trust.sh (the claude shape, but non-fatal) and then waits for a
+# busy turn - answering the dialog first if it renders anyway - before
+# reporting success (the rovo/kimi launch-then-confirm shape). Its busy state
+# is a screen-scrape fallback like grok and rovo, and it is crewmate/scout only.
 # cursor installs no per-task hook either: it writes state/<id>.cursor-session to
 # bind the pane to cursor's own conversation transcript (projects root, the exact
 # workspace path cursor records in .workspace-trusted, and the conversations that
@@ -308,13 +329,13 @@
 # park owns that home's supervision (docs/supervision-protocols/cursor.md).
 # claude is the one harness whose pre-launch setup can REFUSE the spawn: before
 # any per-task state exists, and before its worktree .claude/settings.local.json
-# hooks are written, a non-secondmate claude launch pre-registers the worktree in
-# the launching user's own Claude trust store through bin/fm-claude-trust.sh,
-# because Claude's interactive workspace-trust dialog gates a fresh worktree and
-# firstmate cannot answer it. That helper's header owns the structural scope test
-# and every refusal; a failed registration stops this spawn rather than launching
-# a worker that would wedge on the dialog. A --secondmate launch never runs it,
-# so a claude secondmate home keeps its own one-time trust decision.
+# hooks are written, every claude launch pre-registers the directory the pane
+# starts in - the task worktree, or the secondmate home for a --secondmate spawn -
+# in the launching user's own Claude trust store through bin/fm-claude-trust.sh,
+# because Claude's interactive workspace-trust dialog gates a folder it has never
+# seen and firstmate cannot answer it. That helper's header owns the structural
+# scope test for both shapes and every refusal; a failed registration stops this
+# spawn rather than launching a worker that would wedge on the dialog.
 # Every claude launch also carries the attribution-off policy in its per-launch
 # --settings JSON, so a spawned worker never writes a Co-Authored-By trailer,
 # Claude-Session link, or generated-with line into a commit or PR body;
@@ -424,6 +445,31 @@ if [ "$LAUNCH_ENV_ENABLED" = 1 ]; then
     exit 1
   fi
 fi
+# config/claude-permission-mode (header above): resolved once per spawn or
+# relaunch, before any mutation, so a malformed file refuses instead of
+# launching a worker on a permission posture the captain did not choose.
+if ! CLAUDE_PERM_PRESENT=$(fm_config_source_present "$CONFIG/claude-permission-mode"); then
+  exit 1
+fi
+CLAUDE_PERMISSION_MODE=bypass
+if [ "$CLAUDE_PERM_PRESENT" = 1 ]; then
+  if [ ! -f "$CONFIG/claude-permission-mode" ] || [ ! -r "$CONFIG/claude-permission-mode" ]; then
+    echo "error: config/claude-permission-mode must be a readable regular file holding one of: bypass, auto" >&2
+    exit 1
+  fi
+  CLAUDE_PERMISSION_MODE=$(tr -d '[:space:]' < "$CONFIG/claude-permission-mode" || true)
+  case "$CLAUDE_PERMISSION_MODE" in
+    bypass|auto) ;;
+    *)
+      echo "error: config/claude-permission-mode holds '$CLAUDE_PERMISSION_MODE'; accepted values are: bypass (--dangerously-skip-permissions, the default when the file is absent), auto (--permission-mode auto)" >&2
+      exit 1
+      ;;
+  esac
+fi
+case "$CLAUDE_PERMISSION_MODE" in
+  auto) CLAUDE_PERM_FLAG='--permission-mode auto' ;;
+  *) CLAUDE_PERM_FLAG='--dangerously-skip-permissions' ;;
+esac
 SUB_HOME_MARKER=".fm-secondmate-home"
 if [ -e "$STATE" ] || [ -L "$STATE" ]; then
   fm_backlog_directory_present "$STATE" "state directory" || {
@@ -459,6 +505,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
 # shellcheck source=bin/fm-remote-readiness-lib.sh
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -898,6 +946,7 @@ SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
+SPAWN_SLOT_CLAIMED=0
 RELAUNCH_REPLACEMENT_PENDING=0
 RELAUNCH_REPLACEMENT_BUSY_GEN=
 RELAUNCH_REPLACEMENT_HARNESS=
@@ -1028,6 +1077,23 @@ spawn_abort_cleanup() {
   if [ "$SPAWN_META_LOCK_HELD" = 1 ]; then
     SPAWN_META_LOCK_HELD=0
     fm_lock_release "$SPAWN_META_LOCK" || true
+  fi
+  # A spawn that aborts after claiming its slot but before its record survives
+  # must not leave a claim naming a task no record describes. The release is a
+  # read-then-remove, so it runs only while the project lock that wrote the
+  # claim is still held (aborts before metadata publication); a later abort has
+  # already released that lock and leaves the claim for the next spawn's
+  # atomic replacement rather than racing it. The release itself never removes
+  # another task's claim.
+  if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ -n "${WT:-}" ] \
+     && [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] \
+     && fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
+    SPAWN_SLOT_CLAIMED=0
+    if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
+      fm_treehouse_slot_owner_release "$WT" "$ID" || true
+    else
+      echo "warning: leaving task $ID's slot claim on $WT in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it" >&2
+    fi
   fi
   if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
     SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
@@ -1427,6 +1493,37 @@ omp_model_validate() {  # <omp-bin> <model>
   return 1
 }
 
+# agy pre-launch model validation. `agy models` (agy 1.2.0) prints one model per
+# line as "<id>\t<label>" for the account's catalog only; model ids are bare
+# (gemini-3.8-flash-high), never provider-prefixed. A requested model absent
+# from a reachable listing is concrete unsupported evidence and refuses the
+# spawn, so a stale id (the unlisted bare gemini-3.8-flash) fails loudly here
+# instead of wedging a worker pane. The listing is a remote fetch that needs
+# network and a signed-in account, so the probe runs under the shared hard
+# bound (bin/fm-timeout-lib.sh) with stdin detached: a stalled fetch or a
+# sign-in prompt can never block the spawn before any pane exists. An
+# unreachable listing establishes nothing (harness-adapters
+# model-and-effort.md) and launches unvalidated with a notice.
+agy_model_validate() {  # <agy-bin> <model>
+  local bin=$1 model=$2 listing rc=0 bound=${FM_AGY_MODELS_TIMEOUT:-15}
+  case "$bound" in ''|*[!0-9]*|0*) bound=15 ;; esac
+  [ -n "$model" ] && [ "$model" != default ] || return 0
+  listing=$(fm_run_timed "$bound" "$bin" models 2>/dev/null < /dev/null) || rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
+    if [ "$rc" -eq 124 ]; then
+      echo "notice: 'agy models' did not answer within ${bound}s; launching with --model '$model' unvalidated" >&2
+    else
+      echo "notice: 'agy models' listing is unreachable (exit $rc); launching with --model '$model' unvalidated" >&2
+    fi
+    return 0
+  fi
+  if printf '%s\n' "$listing" | awk '{print $1}' | grep -qxF -- "$model"; then
+    return 0
+  fi
+  echo "error: agy model '$model' is not listed by 'agy models'; choose a listed id or omit --model" >&2
+  return 1
+}
+
 # The verified launch command per adapter. The knowledge half of each adapter
 # (busy-state source, exit command, dialogs, quirks) lives in the harness-adapters skill.
 launch_template() {
@@ -1460,7 +1557,10 @@ launch_template() {
     # sources are not guaranteed to load that scope, so a worker would
     # otherwise run with attribution back on; carrying it per launch keeps the
     # policy in force regardless of which settings scopes end up loaded.
-    claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '\''{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false}}'\'' __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
+    # __CLAUDEPERMFLAG__ is the permission flag config/claude-permission-mode
+    # selects (header above): --dangerously-skip-permissions by default, or
+    # --permission-mode auto for a captain who refuses bypass mode.
+    claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude __CLAUDEPERMFLAG__ --settings '\''{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false}}'\'' __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     codex)
       if [ "$kind" = secondmate ]; then
         printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
@@ -1497,6 +1597,40 @@ launch_template() {
         printf '%s' ' __MODELFLAG____EFFORTFLAG__-e __OMPEXT__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       fi
       ;;
+    # agy (Antigravity CLI): --prompt-interactive "<brief>" starts the supervised
+    # interactive session and auto-submits it, so the brief rides the launch
+    # command (verified: a multi-line brief submitted itself with no extra Enter,
+    # agy 1.2.0). --model takes the bare catalog id from `agy models`
+    # (gemini-3.8-flash-high, never the unlisted bare gemini-3.8-flash).
+    # --effort takes low|medium|high. --dangerously-skip-permissions
+    # auto-approves every tool call, which an unattended crewmate needs.
+    # Every task worktree is a fresh path, so agy would show a folder-trust
+    # dialog ("Do you trust the contents of this project?") and no launch flag
+    # suppresses it (agy 1.2.0 --help lists none). Left unanswered, the turn
+    # runs in agy's own scratch directory instead of the worktree, so the
+    # worktree is pre-registered in the captain's own
+    # ~/.gemini/antigravity-cli/settings.json trustedWorkspaces before launch
+    # (bin/fm-agy-trust.sh, the claude shape), and the post-launch gate
+    # (agy_wait_for_working) answers the preselected safe default ("Yes, I
+    # trust this folder") with a single Enter if the dialog renders anyway,
+    # then requires the busy signature before the spawn reports success.
+    # The foreign primary markers are cleared for the same
+    # reason cursor clears them: agy publishes no marker of its own and does not
+    # clear an inherited CLAUDECODE (verified in the /proc environ of a live 1.2.0
+    # TUI), so bin/fm-harness.sh must not read an agy worker as its launcher.
+    # agy exposes no hook surface, so busy state is a rendered-tail fallback
+    # (bin/fm-busy-lib.sh) and nothing is armed below.
+    # AGY_CLI_DISABLE_AUTO_UPDATE=true avoids lock contention on agy's own
+    # background self-updater when several crewmates launch close together
+    # (verified, agy 1.1.20; carried forward from the fork's captain-approved
+    # Gemini pool spec). GEMINI_API_KEY is stripped at the launch boundary
+    # itself, not only refused in fm-spawn's own environment check
+    # (agy_settings_permits_subscription_only below): the pane is created by a
+    # long-lived tmux/herdr daemon whose shell can export the key from an rc
+    # file fm-spawn never read, and a key agy can see switches the run onto
+    # pay-as-you-go API billing instead of the Google AI Pro/Ultra
+    # subscription this pool exists to use.
+    agy) printf '%s' 'AGY_CLI_DISABLE_AUTO_UPDATE=true env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_API_KEY __AGYBIN__ --prompt-interactive "$(__OPINPUT__ encode launch-brief < __BRIEF__)" __MODELFLAG____EFFORTFLAG__--dangerously-skip-permissions' ;;
     # grok (Grok Build TUI): a positional prompt starts the supervised interactive
     # session. --always-approve auto-approves every tool execution (verified: the
     # crewmate runs fully autonomously, no permission gate), which an unattended
@@ -1578,8 +1712,13 @@ launch_template() {
     # plugin engine is off in the default build, so firstmate folds muse's own
     # session event log instead (bin/fm-busy-lib.sh), bound by the sidecar
     # written below. Nothing to place in the template for it.
-    # codex, opencode, and kimi are also markerless and share this inherited-marker hazard; changing their verified launch boundaries belongs in follow-up work.
-    muse) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u ANTIGRAVITY_AGENT XDG_CONFIG_HOME=__MUSECONFIG__ XDG_DATA_HOME=__MUSEDATA__ MUSE_EXPERIMENTAL_FOREIGN_PERSONAL_CONTEXT_KILL=on __MUSEBIN__ --yolo __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
+    # codex, opencode, and kimi are markerless too and inherit foreign markers the
+    # same way, but detection no longer depends on this launch-side clearing:
+    # bin/fm-harness.sh lets a markerless harness's structural ancestor outrank an
+    # inherited marker. The clearing stays on the cursor and muse templates as the
+    # verified launch behavior their evidence records, not as the only thing
+    # standing between a retained marker and a misidentified worker.
+    muse) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS XDG_CONFIG_HOME=__MUSECONFIG__ XDG_DATA_HOME=__MUSEDATA__ MUSE_EXPERIMENTAL_FOREIGN_PERSONAL_CONTEXT_KILL=on __MUSEBIN__ --yolo __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     # rovo (Atlassian Rovo CLI): a positional brief is dead-on-arrival - rovo
     # loads, never enters a working state, and drops back to an idle shell within
     # about 10-15 seconds (confirmed live four times over a raw PTY and once under
@@ -1607,37 +1746,6 @@ launch_template() {
     # when a supported effort is requested, since a second --config-override
     # would silently discard the first (confirmed live).
     rovo) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS __ROVOBIN__ run --yolo __MODELFLAG____ROVOCONFIGOVERRIDE__' ;;
-    # agy (Antigravity CLI): -i/--prompt-interactive starts the supervised
-    # interactive session with the brief as its own flag value, the same
-    # positional-prompt-then-interactive shape as grok/muse/pi (verified live,
-    # agy 1.1.20). --dangerously-skip-permissions is the targeted equivalent of
-    # claude's own identically-named flag: it auto-approves every tool call
-    # (shell, file write, browser, MCP, and subagent) with no per-call prompt,
-    # which an unattended crewmate needs - agy's default request-review mode
-    # blocks on every tool call with no way to keep shell/file-write autonomy
-    # while gating subagent spawning specifically, so this carries the same
-    # disclosed recursive-subagent risk every other full-autonomy adapter flag
-    # already carries fleet-wide (Claude's own equivalent guard,
-    # bin/fm-subagent-pretool-check.sh, is PRIMARY-scoped, so Claude crewmates
-    # carry this identical risk today). It does NOT suppress the separate
-    # first-launch-per-path workspace-trust dialog ("Do you trust the contents
-    # of this project?"); that persists per path like codex/pi and needs the
-    # same post-spawn peek-and-accept the harness-adapters skill documents for
-    # them. AGY_CLI_DISABLE_AUTO_UPDATE=true avoids lock contention on agy's
-    # own background self-updater when several crewmates launch close together
-    # (documented in the captain-approved spec's Stage 0 addendum). agy's
-    # turn-end signal rides neither the launch command nor a hook - see the
-    # note above the launch templates for why nothing is armed for it.
-    # GEMINI_API_KEY is unset on the launch itself, not only refused in
-    # fm-spawn's own environment: the pane is created by a long-lived
-    # tmux/herdr daemon whose shell can export the key from an rc file
-    # fm-spawn never read (the same caller-vs-worker environment split
-    # muse_worker_meta_api_key_present exists for), and a key agy can see
-    # switches the run onto pay-as-you-go API billing instead of the Google
-    # AI Pro/Ultra subscription this pool exists to use. Stripping it here
-    # makes that invariant hold at the pane on every backend, since every
-    # backend runs this same command string.
-    agy) printf '%s' 'AGY_CLI_DISABLE_AUTO_UPDATE=true env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_API_KEY __AGYBIN__ --dangerously-skip-permissions __MODELFLAG____EFFORTFLAG__-i "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     *) return 1 ;;
   esac
 }
@@ -1685,7 +1793,7 @@ case "$ARG3" in
     ;;
 esac
 
-# muse and gemini are verified as CREWMATE/SCOUT adapters only. A secondmate is
+# muse, gemini, and agy are verified as CREWMATE/SCOUT adapters only. A secondmate is
 # a firstmate instance, so it needs a primary supervision protocol.
 # gemini has none: docs/supervision-protocols/ carries no gemini wake protocol
 # and this task verified only crewmate-side launch, busy state, interrupt, and
@@ -1695,7 +1803,9 @@ esac
 # asyncRewake handlers that firstmate's primary turn-end supervision is built on
 # (muse 0.1.0-R708.1). Refusing here keeps that gap loud instead of standing up a
 # secondmate whose supervision cycle could never be armed.
-if [ "$KIND" = secondmate ] && { [ "$HARNESS" = muse ] || [ "$HARNESS" = gemini ]; }; then
+# agy has none either: it exposes no hook surface for primary supervision and
+# docs/supervision-protocols/ carries no agy wake protocol (agy 1.2.0).
+if [ "$KIND" = secondmate ] && { [ "$HARNESS" = muse ] || [ "$HARNESS" = gemini ] || [ "$HARNESS" = agy ]; }; then
   echo "error: $HARNESS is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary supervision protocol. Select a harness verified for secondmates." >&2
   exit 1
 fi
@@ -1723,9 +1833,9 @@ case "$HARNESS" in
   agy)
     # The raw launch command escape hatch exists to verify a genuinely
     # unverified adapter. agy already has a fully verified template whose
-    # AC-1 credential preflight and subscription-only billing refusal are
+    # credential preflight and subscription-only billing refusal are
     # gated on the __AGYBIN__ placeholder that only launch_template()'s own
-    # agy branch inserts, and whose AC-2 model allowlist and effort
+    # agy branch inserts, and whose model-catalog validation and effort
     # normalization below run against fm-spawn's own --model/--effort flags -
     # none of which a raw command's argv participates in. A raw command whose
     # first word resolves to agy would launch with none of those checks ever
@@ -1737,24 +1847,17 @@ case "$HARNESS" in
       echo "error: a raw launch command is refused for harness=agy; it would bypass the verified adapter's credential preflight, model allowlist, and subscription-only billing refusal. Pass --harness agy (or the bare 'agy' positional) to use the verified template." >&2
       exit 1
     fi
-    # AC-2 (captain-approved): the ONLY allowed model identity is the literal
-    # gemini-3.7-flash. An empty/default MODEL defaults to it rather than
-    # falling through to whatever agy would pick on its own; anything else
-    # refuses the launch outright. This is enforced here, in the launch path
-    # itself, so a hand-typed --model override or a stale dispatch profile can
-    # never bypass it.
-    if [ -z "$MODEL" ] || [ "$MODEL" = default ]; then
-      MODEL=gemini-3.7-flash
-    elif [ "$MODEL" != gemini-3.7-flash ]; then
-      echo "error: harness=agy only ever launches the literal model 'gemini-3.7-flash'; got '$MODEL'" >&2
+    AGY_BIN=$(resolve_pi_executable agy) || {
+      echo "error: agy executable not found on PATH; install Antigravity CLI or select a different verified harness" >&2
       exit 1
-    fi
+    }
     # effort_flag_for_harness ALWAYS emits an --effort value for agy, because
-    # agy's own CLI requires one, folding an empty, `default`, or unsupported
-    # class onto medium. Record that same resolved value here so task metadata
-    # names the effort the pane actually launched: for every other adapter
-    # `effort=default` truthfully means "no effort flag was passed", but agy
-    # has no flagless mode for that to describe.
+    # agy's own CLI requires one whenever --model is given, folding an empty,
+    # `default`, or unsupported class onto medium. Record that same resolved
+    # value here so task metadata names the effort the pane actually
+    # launched: for every other adapter `effort=default` truthfully means
+    # "no effort flag was passed", but agy has no flagless mode for that to
+    # describe.
     case "$EFFORT" in
       low|medium|high) : ;;
       *) EFFORT=medium ;;
@@ -1833,6 +1936,9 @@ if [ "$EFFORT" = ultra ]; then
 fi
 if [ "$HARNESS" = omp ]; then
   omp_model_validate "$OMP_BIN" "$MODEL" || exit 1
+fi
+if [ "$HARNESS" = agy ]; then
+  agy_model_validate "$AGY_BIN" "$MODEL" || exit 1
 fi
 
 secondmate_registry_value() {
@@ -1942,25 +2048,6 @@ muse_credential_present() {
   [ -s "$auth" ] || muse_worker_meta_api_key_present
 }
 
-resolve_agy_binary() {
-  local candidate dir
-  candidate=$(command -v agy 2>/dev/null || true)
-  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-    case "$candidate" in
-      /*) printf '%s\n' "$candidate"; return 0 ;;
-      *)
-        dir=$(cd "$(dirname "$candidate")" 2>/dev/null && pwd -P) || dir=
-        if [ -n "$dir" ]; then
-          printf '%s/%s\n' "$dir" "$(basename "$candidate")"
-          return 0
-        fi
-        ;;
-    esac
-  fi
-  echo "error: agy executable not found on PATH; install Antigravity CLI or select a different verified harness" >&2
-  return 1
-}
-
 # agy_credential_present: 0 when a launched agy pane can reach an already
 # authenticated Google AI Pro/Ultra subscription session with no interactive
 # browser sign-in (AC-1). Verified live (Antigravity CLI 1.1.20, 2026-08-26):
@@ -2024,15 +2111,15 @@ model_flag_for_harness() {
 effort_flag_for_harness() {
   local harness=$1 effort=$2 model=${3:-}
   if [ "$harness" = agy ]; then
-    # agy's own CLI REQUIRES --effort whenever --model gemini-3.7-flash is
-    # given (verified live, agy 1.1.20: omitting it fails loudly with
-    # "--model gemini-3.7-flash requires --effort (available: low, medium,
-    # high)"), so the generic "omit an unset/unsupported effort" rule below
-    # cannot apply here - agy has no flagless default to fall back to. medium
-    # is the captain-approved default when the caller names none; an
-    # unsupported class (xhigh, max) falls back to that same default instead
-    # of passing a value agy would reject, preserving launch success the same
-    # way every other harness's unsupported-value handling does.
+    # agy's own CLI REQUIRES --effort whenever --model is given (verified
+    # live, agy 1.1.20: omitting it fails loudly with "--model <id> requires
+    # --effort (available: low, medium, high)"), so the generic "omit an
+    # unset/unsupported effort" rule below cannot apply here - agy has no
+    # flagless default to fall back to. medium is the captain-approved
+    # default when the caller names none; an unsupported class (xhigh, max)
+    # falls back to that same default instead of passing a value agy would
+    # reject, preserving launch success the same way every other harness's
+    # unsupported-value handling does.
     case "$effort" in
       low|medium|high) : ;;
       *) effort=medium ;;
@@ -2132,7 +2219,6 @@ esac
 
 case "$LAUNCH" in
   *__AGYBIN__*)
-    AGY_BIN=$(resolve_agy_binary) || exit 1
     AGY_CRED_FILE="${HOME:-}/.gemini/antigravity-cli/jetski_state.pbtxt"
     AGY_SETTINGS_FILE="${HOME:-}/.gemini/antigravity-cli/settings.json"
     if ! agy_credential_present "$AGY_CRED_FILE"; then
@@ -2864,7 +2950,7 @@ if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
   if fm_backlog_row_probe "$DATA" "$ID"; then
     BACKLOG_ROW_STATE=$FM_BACKLOG_ROW_STATE
   elif [ "$FM_BACKLOG_ROW_RESULT" = not_found ]; then
-    echo "error: task $ID has no backlog item in this home, so dispatching it would leave a worker no record owns; add it first (tasks-axi add $ID '<title>' --kind $KIND) and re-run" >&2
+    echo "error: task $ID has no backlog item in this home, so dispatching it would leave a worker no record owns; add it first (bin/fm-tasks-axi.sh add $ID '<title>' --kind $KIND) and re-run" >&2
     exit 1
   else
     echo "error: task $ID's backlog item could not be read before dispatch ($FM_BACKLOG_ROW_ERROR)" >&2
@@ -3310,17 +3396,77 @@ rovo_spawn_fail() {  # <detail>
   rovo_endpoint_cleanup
 }
 
-# No task record is ever published on this failure path, so nothing else
-# (teardown, the watcher) will ever learn this endpoint exists to close it:
-# without this, the already-launched --yolo rovo process keeps running as an
-# orphaned autonomous agent outside task control. Mirrors fm-teardown.sh's own
-# generic non-orca kill call; orca's worktree+terminal are owned by the
-# separate ORCA_ABORT_CLEANUP trap path and are out of scope here.
+# The launch-then-confirm gates run after the task record is published, when
+# ORCA_ABORT_CLEANUP is already cleared and neither the abort trap nor a
+# teardown owns this endpoint yet, so a gate failure must close the launched
+# process here or it keeps running as an orphaned autonomous agent outside
+# task control. Mirrors fm-teardown.sh's own generic kill call. On orca only
+# the exact terminal is closed: that stops the CLI while its worktree stays
+# for the record's own teardown, which owns worktree deletion.
 rovo_endpoint_cleanup() {
-  [ "$BACKEND" = orca ] && return 0
+  if [ "$BACKEND" = orca ]; then
+    fm_backend_kill orca "$T" 2>/dev/null || true
+    return 0
+  fi
   local tab_id=
   [ "$BACKEND" = zellij ] && tab_id=$ZELLIJ_TAB_ID
   fm_backend_kill "$BACKEND" "$T" "$tab_id" "fm-$ID" 2>/dev/null || true
+}
+
+# agy carries its brief on the launch command, so it needs no delivery gate,
+# but a worktree agy does not trust parks the TUI on the folder-trust dialog
+# and an unanswered dialog sends the turn into agy's scratch directory instead
+# of the worktree. The trust is pre-registered before launch
+# (bin/fm-agy-trust.sh, verified to remove the dialog), and this gate is the
+# backstop in the rovo/kimi launch-then-confirm shape: answer the dialog once
+# with the preselected safe default if it renders anyway, then require
+# positive proof that the brief is being processed - the same verdict the
+# supervisor reads (Herdr's native working state or the pinned `esc to cancel`
+# status row through fm_busy_classify) - before the spawn reports success.
+# The gate is strict about ordering because on Herdr the native working
+# verdict is known to coexist with an unanswered dialog: a busy verdict counts
+# only when the path was pre-registered or the dialog has been seen and
+# answered; on an unregistered path it keeps polling for the dialog instead.
+AGY_TRUST_DIALOG='Do you trust the contents of this project?'
+AGY_TRUST_ANSWERED=0
+
+agy_capture() {
+  fm_backend_capture "$BACKEND" "$T" 120 "$W" 2>/dev/null || true
+}
+
+agy_pane_shows_trust_dialog() {  # <plain-pane-capture>
+  printf '%s\n' "$1" | grep -Fq "$AGY_TRUST_DIALOG"
+}
+
+agy_pane_is_working() {  # <plain-pane-capture>
+  case "$(fm_busy_classify "$BACKEND" "$T" agy "$ID" "$STATE" "$1")" in
+    busy*) return 0 ;;
+  esac
+  return 1
+}
+
+agy_wait_for_working() {
+  local pane i=0 max=${FM_AGY_READY_POLLS:-60} interval=${FM_AGY_POLL_INTERVAL:-0.5}
+  while [ "$i" -lt "$max" ]; do
+    pane=$(agy_capture)
+    if agy_pane_shows_trust_dialog "$pane"; then
+      if [ "$AGY_TRUST_ANSWERED" -eq 0 ]; then
+        spawn_send_key "$T" Enter
+        AGY_TRUST_ANSWERED=1
+      fi
+    elif [ "$AGY_TRUST_PREREGISTERED" -eq 1 ] || [ "$AGY_TRUST_ANSWERED" -eq 1 ]; then
+      agy_pane_is_working "$pane" && return 0
+    fi
+    i=$((i + 1))
+    [ "$i" -ge "$max" ] || sleep "$interval"
+  done
+  return 1
+}
+
+agy_spawn_fail() {  # <detail>
+  printf 'failed: %s\n' "$1" >> "$STATE/$ID.status"
+  echo "error: $1; inspect window $T" >&2
+  rovo_endpoint_cleanup
 }
 
 if [ "$RELAUNCH" -eq 1 ]; then
@@ -3417,6 +3563,26 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   fi
 
   validate_spawn_worktree "treehouse get" "$T"
+
+  # Claim the pool slot for this task. The interactive `treehouse get` sent to
+  # the pane above records only a process lease (Treehouse's durable
+  # `get --lease --lease-holder`, which bin/fm-home-seed.sh uses for secondmate
+  # homes, is not this path), so Treehouse cannot say which task a slot belongs
+  # to once that task's worker exits - and that is exactly when the slot is
+  # handed on and this task's worktree= line goes stale. The claim is what lets
+  # bin/fm-teardown.sh leave a slot that has since been reassigned untouched, so
+  # a slot that cannot be claimed is refused here, at the cheapest point, rather
+  # than launching a worker whose slot teardown could later release out from
+  # under its successor.
+  # Written under the Treehouse project lock held from before slot allocation
+  # through metadata publication, so no other spawn or return sees a half-claim.
+  if fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
+    if ! fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME"; then
+      echo "error: could not claim Treehouse pool slot $WT for task $ID; refusing to launch a worker whose slot cannot later be proved to be its own; inspect window $T" >&2
+      exit 1
+    fi
+    SPAWN_SLOT_CLAIMED=1
+  fi
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   ALLOW_NO_ORIGIN=0
@@ -3426,27 +3592,53 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   freshen_spawn_worktree_base "$WT" "$ALLOW_NO_ORIGIN" || exit 1
 fi
 
-# Pre-register Claude's workspace trust for the worktree, at the first point the
-# worktree is known and before any per-task state is created below. The dialog
-# gates the pane before the brief is ever read, and it also gates loading the
-# project settings written further down, so nothing armed below takes effect
-# without it. bin/fm-claude-trust.sh owns the structural scope test and refuses
-# any path that is not this project's own isolated worktree; a refusal blocks the
-# spawn rather than launching a worker that would wedge on a dialog firstmate
-# cannot answer. Refusing here rather than beside the arm keeps this in the same
-# class as the two worktree refusals just above: no temp root, no retired
-# relaunch wiring and no busy record exists yet to strand, so the refusal names
-# the endpoint the same way they do and leaves nothing else behind.
-if [ "$KIND" != secondmate ]; then
-  case "$HARNESS" in
-    claude*)
-      if ! "$FM_ROOT/bin/fm-claude-trust.sh" "$WT" "$PROJ_ABS" >/dev/null; then
-        echo "error: could not pre-register Claude workspace trust for $WT; refusing to launch a claude worker that would wedge on the trust dialog; inspect window $T" >&2
-        exit 1
+# Pre-register Claude's workspace trust for the directory this launch starts in,
+# at the first point that directory is known and before any per-task state is
+# created below. The dialog gates the pane before the brief is ever read, and it
+# also gates loading the project settings written further down, so nothing armed
+# below takes effect without it. EVERY claude launch needs it, a secondmate's
+# included: its home is just as unseen by Claude as a fresh worktree, and
+# skipping the step for that kind left a standalone-clone secondmate home with
+# nothing registered and a pane wedged on a dialog firstmate cannot answer.
+# bin/fm-claude-trust.sh owns the structural scope test for both shapes and
+# refuses anything that is neither this project's own isolated worktree nor a
+# seeded secondmate home marked for this id; a refusal blocks the spawn rather
+# than launching a worker that would wedge. Refusing here rather than beside the
+# arm keeps this in the same class as the two worktree refusals just above: no
+# temp root, no retired relaunch wiring and no busy record exists yet to strand,
+# so the refusal names the endpoint the same way they do and leaves nothing else
+# behind.
+# agy gates a fresh worktree behind its own folder-trust dialog and honours a
+# trustedWorkspaces entry written ahead of launch (bin/fm-agy-trust.sh), so the
+# same pre-registration removes the dialog for it. Unlike claude's dialog, agy's
+# preselects the safe answer, so a failed registration is not fatal here: the
+# post-launch gate (agy_wait_for_working) answers the dialog itself and, on a
+# path that was not pre-registered, refuses to count a busy turn as ready until
+# it has done so. agy is crewmate/scout only (refused above for secondmate), so
+# only the worktree shape applies.
+AGY_TRUST_PREREGISTERED=0
+case "$HARNESS" in
+  claude*)
+    if [ "$KIND" = secondmate ]; then
+      spawn_trust_args=(--secondmate-home "$PROJ_ABS" "$ID")
+    else
+      spawn_trust_args=("$WT" "$PROJ_ABS")
+    fi
+    if ! "$FM_ROOT/bin/fm-claude-trust.sh" "${spawn_trust_args[@]}" >/dev/null; then
+      echo "error: could not pre-register Claude workspace trust for $WT; refusing to launch a claude worker that would wedge on the trust dialog; inspect window $T" >&2
+      exit 1
+    fi
+    ;;
+  agy)
+    if [ "$KIND" != secondmate ]; then
+      if "$FM_ROOT/bin/fm-agy-trust.sh" "$WT" "$PROJ_ABS" >/dev/null; then
+        AGY_TRUST_PREREGISTERED=1
+      else
+        echo "warning: could not pre-register agy workspace trust for $WT; the launch will answer the folder-trust dialog in window $T instead" >&2
       fi
-      ;;
-  esac
-fi
+    fi
+    ;;
+esac
 
 # Per-task temp root: /tmp/fm-<id>/ with Go's build temp nested at gotmp/. Go won't
 # create GOTMPDIR, so mkdir before it is used; fm-teardown removes the whole root.
@@ -4071,6 +4263,7 @@ MODELFLAG=$(model_flag_for_harness "$HARNESS" "$MODEL")
 EFFORTFLAG=$(effort_flag_for_harness "$HARNESS" "$EFFORT" "$MODEL") || exit 1
 LAUNCH=${LAUNCH//__MODELFLAG__/$MODELFLAG}
 LAUNCH=${LAUNCH//__EFFORTFLAG__/$EFFORTFLAG}
+LAUNCH=${LAUNCH//__CLAUDEPERMFLAG__/$CLAUDE_PERM_FLAG}
 if [ "$HARNESS" = rovo ]; then
   ROVOCONFIGOVERRIDE=$(rovo_config_override_flag "$EFFORT" "$DATA" "$STATE" "$ID") || {
     echo "error: could not resolve this task's home paths for rovo's allowedExternalPaths grant" >&2
@@ -4091,11 +4284,12 @@ case "$HARNESS" in
   cursor) LAUNCH=${LAUNCH//__CURSORBIN__/"$(shell_quote "$CURSOR_BIN")"} ;;
   gemini) LAUNCH=${LAUNCH//__GEMINISETTINGS__/"$(shell_quote "$STATE_REAL/$ID.gemini-settings.json")"} ;;
   omp) LAUNCH=${LAUNCH//__OMPBIN__/"$(shell_quote "$OMP_BIN")"} ;;
+  agy) LAUNCH=${LAUNCH//__AGYBIN__/"$(shell_quote "$AGY_BIN")"} ;;
 esac
 LAUNCH=${LAUNCH//__WORKTREE__/$sq_worktree}
 case "$HARNESS" in
   claude|codex|opencode|pi|pi-signed|grok|kimi|gemini|muse|rovo|agy)
-    LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI -u ANTIGRAVITY_AGENT $LAUNCH"
+    LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI $LAUNCH"
     ;;
 esac
 # Crewmate panes are created by a long-lived tmux/herdr daemon that does not
@@ -4263,6 +4457,18 @@ if [ "$HARNESS" = rovo ]; then
   fi
   if ! rovo_wait_for_delivery; then
     rovo_spawn_fail "rovo brief pointer delivery was not confirmed in window $T"
+    exit 1
+  fi
+fi
+if [ "$HARNESS" = agy ]; then
+  if ! agy_wait_for_working; then
+    if [ "$AGY_TRUST_ANSWERED" -eq 1 ]; then
+      agy_spawn_fail "agy did not start processing its brief after the folder-trust dialog was answered in window $T"
+    elif [ "$AGY_TRUST_PREREGISTERED" -eq 1 ]; then
+      agy_spawn_fail "agy did not start processing its brief in the pre-trusted worktree in window $T"
+    else
+      agy_spawn_fail "agy never showed its folder-trust dialog on an unregistered worktree in window $T, so the brief could not be confirmed to run there"
+    fi
     exit 1
   fi
 fi
