@@ -82,6 +82,21 @@ EOF
   pass "agy spawn resolves an unset or 'default' model to gemini-3.7-flash-medium"
 }
 
+test_resolves_unset_model_from_explicit_effort() {
+  local rec case_dir home proj wt fakebin id agyhome status
+  rec=$(make_agy_case "$TMP_ROOT" effort-only)
+  IFS='|' read -r case_dir home proj wt fakebin id agyhome <<EOF
+$rec
+EOF
+  run_agy_spawn "$home" "$proj" "$wt" "$fakebin" "$id" "$agyhome" --effort low >/dev/null
+  status=$?
+  expect_code 0 "$status" "agy spawn with only --effort low should resolve the matching model"
+  assert_contains "$(cat "$home/launch.log")" "--model 'gemini-3.7-flash-low'" \
+    "agy spawn with only --effort low did not resolve gemini-3.7-flash-low"
+  assert_grep 'effort=low' "$home/state/$id.meta" "agy effort-only spawn did not record its effort"
+  pass "agy spawn resolves an unset model to the Gemini 3.7 Flash variant an explicit effort names"
+}
+
 test_refuses_effort_that_disagrees_with_model_suffix() {
   local rec case_dir home proj wt fakebin id agyhome out status
   rec=$(make_agy_case "$TMP_ROOT" effort-mismatch)
@@ -118,5 +133,6 @@ EOF
 test_refuses_non_allowlisted_model
 test_accepts_each_allowlisted_model
 test_defaults_unset_model_to_medium
+test_resolves_unset_model_from_explicit_effort
 test_refuses_effort_that_disagrees_with_model_suffix
 test_accepts_effort_matching_model_suffix

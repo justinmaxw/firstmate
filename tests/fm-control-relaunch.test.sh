@@ -109,7 +109,9 @@ case "${1:-}" in
       esac
     done
     printf 'fakepane\n'; exit 0 ;;
-  capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
+  capture-pane)
+    if [ -f "$D/screen" ]; then cat "$D/screen"; else printf '╭────╮\n│    │\n╰────╯\n'; fi
+    exit 0 ;;
   list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
 esac
 exit 0
@@ -644,6 +646,67 @@ test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop() {
   assert_contains "$(cat "$dir/fake/literal")" "--codex-effort 'ultra'" "relaunch lost native flag"
   assert_not_contains "$(cat "$dir/fake/literal")" "--thinking 'ultra'" "relaunch used an invalid Pi level"
   pass "native Ultra relaunch preserves its profile and rejects an unsupported model before stopping"
+}
+
+# add_agy_task <case-dir> <id> <model> <effort>: a live agy ship task on a
+# signed-in worker home with a fake agy whose catalog lists every Gemini 3.7
+# Flash variant and whose pane reads busy once launched.
+add_agy_task() {
+  local dir=$1 id=$2 model=$3 effort=$4
+  add_ship_task "$dir" "$id" agy
+  sed "s/^model=default\$/model=$model/; s/^effort=default\$/effort=$effort/" \
+    "$dir/home/state/$id.meta" > "$dir/home/state/$id.meta.tmp"
+  mv "$dir/home/state/$id.meta.tmp" "$dir/home/state/$id.meta"
+  printf agy > "$dir/fake/command"
+  printf agy > "$dir/fake/becomes"
+  printf 'esc to cancel                                Gemini 3.7 Flash · medium\n' > "$dir/fake/screen"
+  mkdir -p "$dir/user-home/.gemini/antigravity-cli"
+  printf 'opaque-session-state\n' > "$dir/user-home/.gemini/antigravity-cli/jetski_state.pbtxt"
+  cat > "$dir/fakebin/agy" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = models ]; then
+  printf 'gemini-3.7-flash-high\tGemini 3.7 Flash (High)\n'
+  printf 'gemini-3.7-flash-medium\tGemini 3.7 Flash (Medium)\n'
+  printf 'gemini-3.7-flash-low\tGemini 3.7 Flash (Low)\n'
+fi
+exit 0
+SH
+  chmod +x "$dir/fakebin/agy"
+}
+
+test_agy_model_only_relaunch_rederives_the_effort() {
+  local dir out rc id=rl-agy-model
+  dir=$(new_case agy-model "$id")
+  add_agy_task "$dir" "$id" gemini-3.7-flash-medium medium
+  out=$(run_control "$dir" "$id" relaunch --model gemini-3.7-flash-high --note "more reasoning"); rc=$?
+  expect_code 0 "$rc" "an agy model-only relaunch should succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" "$id" model)" = gemini-3.7-flash-high ] || fail "the agy relaunch did not record the new model"
+  [ "$(meta_field "$dir" "$id" effort)" = high ] || fail "the agy relaunch did not re-derive the effort from the new model"
+  assert_contains "$(cat "$dir/fake/literal")" "--model 'gemini-3.7-flash-high'" "the agy replacement did not launch the new model"
+  pass "fm-control relaunch: an agy model-only relaunch re-derives the effort from the new model"
+}
+
+test_agy_effort_only_relaunch_picks_the_matching_model() {
+  local dir out rc id=rl-agy-effort
+  dir=$(new_case agy-effort "$id")
+  add_agy_task "$dir" "$id" gemini-3.7-flash-medium medium
+  out=$(run_control "$dir" "$id" relaunch --effort low --note "less reasoning"); rc=$?
+  expect_code 0 "$rc" "an agy effort-only relaunch should succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" "$id" model)" = gemini-3.7-flash-low ] || fail "the agy relaunch did not pick the model matching the new effort"
+  [ "$(meta_field "$dir" "$id" effort)" = low ] || fail "the agy relaunch did not record the new effort"
+  pass "fm-control relaunch: an agy effort-only relaunch picks the matching Gemini 3.7 Flash model"
+}
+
+test_agy_unsupported_effort_relaunch_refuses_before_stop() {
+  local dir out rc id=rl-agy-xhigh
+  dir=$(new_case agy-xhigh "$id")
+  add_agy_task "$dir" "$id" gemini-3.7-flash-medium medium
+  out=$(run_control "$dir" "$id" relaunch --effort xhigh --note "unsupported"); rc=$?
+  expect_code 1 "$rc" "an agy relaunch with an unsupported effort should refuse"
+  assert_contains "$out" "agy encodes effort in its model id" "the agy effort refusal lacked its reason"
+  [ "$(cat "$dir/fake/command")" = agy ] || fail "a refused agy relaunch stopped the running agent"
+  [ ! -s "$dir/fake/literal" ] || fail "a refused agy relaunch sent lifecycle input"
+  pass "fm-control relaunch: an agy relaunch with an unsupported effort refuses before stopping the agent"
 }
 
 test_explicit_model_wins_over_the_recorded_one() {
@@ -1622,6 +1685,9 @@ test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop
 test_explicit_model_wins_over_the_recorded_one
+test_agy_model_only_relaunch_rederives_the_effort
+test_agy_effort_only_relaunch_picks_the_matching_model
+test_agy_unsupported_effort_relaunch_refuses_before_stop
 test_relaunch_onto_an_unverified_harness_is_refused
 test_prior_harness_turnend_registry_entry_is_cleared
 test_wiring_removal_failure_refuses_before_replacement_arm

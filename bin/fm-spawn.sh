@@ -1493,11 +1493,11 @@ omp_model_validate() {  # <omp-bin> <model>
   return 1
 }
 
-# agy pre-launch model validation. `agy models` (agy 1.2.0) prints one model per
+# agy pre-launch model validation. `agy models` (agy 1.2.x) prints one model per
 # line as "<id>\t<label>" for the account's catalog only; model ids are bare
-# (gemini-3.8-flash-high), never provider-prefixed. A requested model absent
+# (gemini-3.7-flash-medium), never provider-prefixed. A requested model absent
 # from a reachable listing is concrete unsupported evidence and refuses the
-# spawn, so a stale id (the unlisted bare gemini-3.8-flash) fails loudly here
+# spawn, so a stale id (the unlisted bare gemini-3.7-flash) fails loudly here
 # instead of wedging a worker pane. The listing is a remote fetch that needs
 # network and a signed-in account, so the probe runs under the shared hard
 # bound (bin/fm-timeout-lib.sh) with stdin detached: a stalled fetch or a
@@ -1845,11 +1845,15 @@ case "$HARNESS" in
     # Captain-approved AC-2: agy only ever launches Gemini 3.7 Flash, enforced
     # here in the launch path so a hand-typed --model or a stale dispatch
     # profile cannot bypass it. agy 1.2.x encodes effort in the model id's
-    # suffix, so an empty/default model resolves to the medium variant, the
-    # recorded effort is that suffix, and an explicit --effort naming a
-    # different level is refused rather than silently picking one.
+    # suffix, so an empty/default model resolves to the variant an explicit
+    # low|medium|high --effort names (medium otherwise), the recorded effort is
+    # that suffix, and an explicit --effort naming a different level is
+    # refused rather than silently picking one.
     if [ -z "$MODEL" ] || [ "$MODEL" = default ]; then
-      MODEL=gemini-3.7-flash-medium
+      case "$EFFORT" in
+        low|medium|high) MODEL=gemini-3.7-flash-$EFFORT ;;
+        *) MODEL=gemini-3.7-flash-medium ;;
+      esac
     fi
     case "$MODEL" in
       gemini-3.7-flash-low|gemini-3.7-flash-medium|gemini-3.7-flash-high) : ;;

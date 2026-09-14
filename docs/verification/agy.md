@@ -38,6 +38,7 @@ $ agy --prompt-interactive "Reply with exactly AGY_LIVE_PROBE_OK and nothing els
 The brief submitted itself with no extra Enter, the turn ran, and the reply rendered in the pane.
 A second launch into the same directory answered a fresh prompt the same way, so the shape is repeatable, not a first-run accident.
 The footer rendered `Gemini 3.8 Flash · low`, proving both flags were accepted together.
+That agy 1.2.0 launch predates the Gemini 3.7 Flash allowlist; the current launch passes a suffixed id with no `--effort` flag, re-verified on agy 1.2.2 under [Model and effort](#model-and-effort).
 
 ## Trust dialog: pre-registered before launch, gated on a busy turn as the backstop
 
@@ -72,20 +73,40 @@ When the brief cannot be confirmed to run within the window (an answered dialog 
 
 ## Model and effort
 
+Re-verified 2026-09-14 on `agy 1.2.2` (macOS, Google AI Pro account):
+
 ```
 $ agy models
 Fetching available models...
 gemini-3.8-flash-high	Gemini 3.8 Flash (High)
 gemini-3.8-flash-medium	Gemini 3.8 Flash (Medium)
 gemini-3.8-flash-low	Gemini 3.8 Flash (Low)
+gemini-3.7-flash-high	Gemini 3.7 Flash (High)
+gemini-3.7-flash-medium	Gemini 3.7 Flash (Medium)
+gemini-3.7-flash-low	Gemini 3.7 Flash (Low)
+gemini-3.6-flash-high	Gemini 3.6 Flash (High)
+...
+gemini-3.1-pro-high	Gemini 3.1 Pro (High)
 ...
 ```
 
-`agy --help` documents `--effort` as `low|medium|high` and `--model` as the model for the session.
-The bare `gemini-3.8-flash` id from this home's previous config is not listed; only the suffixed `-high`, `-medium`, and `-low` variants are.
-`bin/fm-spawn.sh`'s `agy_model_validate` refuses a requested id a reachable `agy models` listing omits, and launches unvalidated with a stderr notice when the listing is unreachable.
+Every listed Gemini id carries its effort as a suffix; the bare `gemini-3.7-flash` literal the agy 1.1.20 adapter pinned is no longer listed.
+The captain-approved AC-2 allowlist keeps that pin's intent against the suffixed ids: `bin/fm-spawn.sh` launches only `gemini-3.7-flash-low`, `gemini-3.7-flash-medium`, or `gemini-3.7-flash-high`, resolves an empty or `default` model to the variant an explicit `low|medium|high` effort names (`gemini-3.7-flash-medium` otherwise), and refuses every other id.
+Because the effort rides the model id, fm-spawn passes no separate `--effort` flag, records the suffix as the task's effort, and refuses an explicit `--effort` that disagrees with the suffix; `bin/fm-control.sh relaunch` re-derives the effort from whichever model the replacement uses, so a model-only or effort-only relaunch never carries a stale effort into that refusal after the running agent is stopped.
+`agy --help` still documents `--effort` as `low|medium|high`, but a suffixed id needs no companion flag:
+
+```
+$ agy -p "Reply with exactly: ok" --model gemini-3.7-flash-medium
+ok
+$ agy --prompt-interactive 'Reply with exactly the word: pineapple' --model 'gemini-3.7-flash-medium' --dangerously-skip-permissions
+```
+
+The interactive launch above is the exact shape fm-spawn generates, run in a private tmux server in a never-trusted directory: after the folder-trust dialog was answered, the banner showed `Gemini 3.7 Flash (Medium)` on the Google AI Pro account, the reply was `pineapple`, and the status row read `Gemini 3.7 Flash · medium`.
+`tests/fm-spawn-agy-model-allowlist.test.sh` pins the allowlist, the default resolution, the recorded suffix effort, the absent `--effort` flag, and the mismatch refusal; `tests/fm-control-relaunch.test.sh` pins the relaunch re-derivation.
+
+`bin/fm-spawn.sh`'s `agy_model_validate` additionally refuses an allowed id a reachable `agy models` listing omits, and launches unvalidated with a stderr notice when the listing is unreachable.
 The listing is a remote fetch (`Fetching available models...`), so the probe runs with stdin detached under the shared hard bound from `bin/fm-timeout-lib.sh` (15 seconds by default, `FM_AGY_MODELS_TIMEOUT`; a non-positive or non-numeric value clamps back to that default, because a non-positive bound is not a bound); a stalled fetch or a sign-in prompt is cut off and falls through to the unvalidated launch instead of blocking the spawn before any pane exists.
-Print mode (`agy -p "Reply with exactly: AGY_PRINT_PROBE_OK" --model gemini-3.8-flash-low`) returned the exact reply with exit 0 in about 8 seconds, proving the credential path without a pane.
+The earlier agy 1.2.0 record below predates the allowlist and used `gemini-3.8-flash-*` ids with `--effort`; print mode (`agy -p "Reply with exactly: AGY_PRINT_PROBE_OK" --model gemini-3.8-flash-low`) returned the exact reply with exit 0 in about 8 seconds there too, proving the credential path without a pane.
 
 ## Busy state: the pinned status row, unknown on absence
 
@@ -146,7 +167,7 @@ This is the cursor precedent, not a gap to patch in shared code.
 
 ## Supervised task: spawn, steer, relaunch, and exit through the new path
 
-A trivial scout ran end to end through `bin/fm-spawn.sh --harness agy` against the same isolated lab session: `spawned agy-e2e1 harness=agy kind=scout` with a treehouse-provisioned worktree, `--model gemini-3.8-flash-low`, and `--effort low` all recorded in task metadata.
+Recorded on agy 1.2.0, before the Gemini 3.7 Flash allowlist and suffix-derived effort above, a trivial scout ran end to end through `bin/fm-spawn.sh --harness agy` against the same isolated lab session: `spawned agy-e2e1 harness=agy kind=scout` with a treehouse-provisioned worktree, `--model gemini-3.8-flash-low`, and `--effort low` all recorded in task metadata.
 The worker wrote its worktree file and appended `done: agy e2e turn complete` to its status file, which lives outside the worktree, proving prompt processing, tool execution, outside-workspace file access, and a new completion event.
 Durable steering held: a `bin/fm-send.sh` message landed in the task inbox, the worker appended the steered lines to both files, and its inbox record moved to `handled/`.
 Same-copy relaunch held: `bin/fm-control.sh relaunch --note` replaced the worker in place on the identical worktree, model, and effort, the replacement verified both prior lines intact and appended `relaunched: done`.

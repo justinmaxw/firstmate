@@ -682,6 +682,17 @@ resolve_relaunch_profile() {
   else
     TARGET_EFFORT=default
   fi
+  if [ "$TARGET_HARNESS" = agy ]; then
+    if [ "$EFFORT_SET" = 0 ]; then
+      TARGET_EFFORT=default
+    elif [ "$MODEL_SET" = 0 ]; then
+      TARGET_MODEL=default
+    fi
+    case "$TARGET_EFFORT" in
+      default|low|medium|high) ;;
+      *) die "agy encodes effort in its model id, so only low, medium, or high can apply; relaunching $ID with effort '$TARGET_EFFORT' would stop the running agent for a launch that must be refused" ;;
+    esac
+  fi
   if [ "$TARGET_EFFORT" = ultra ]; then
     "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$TARGET_HARNESS" "$TARGET_MODEL" "$TARGET_EFFORT" || return 1
   fi
